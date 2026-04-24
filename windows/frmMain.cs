@@ -1346,7 +1346,7 @@ namespace WinCFScan
 
         private void mnuSkipAfterAWhile_Click(object sender, EventArgs e)
         {
-            setAutoSkip(mnuSkipAfterAWhile.Checked, "Auto skip current IP range after 3 minutes of scanning is");
+            setAutoSkip(mnuSkipAfterAWhile.Checked, "Auto skip current IP range after 5 minutes of scanning is");
             scanEngine.setSkipAfterAWhile(mnuSkipAfterAWhile.Checked);
             setAutoSkipStatus();
         }

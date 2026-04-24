@@ -229,10 +229,10 @@
             toolStrip2.Dock = DockStyle.None;
             toolStrip2.GripStyle = ToolStripGripStyle.Hidden;
             toolStrip2.Items.AddRange(new ToolStripItem[] { prgOveral, toolStripLabel1, btnSkipCurRange, prgCurRange, toolStripLabel2 });
-            toolStrip2.Location = new Point(421, 52);
+            toolStrip2.Location = new Point(390, 52);
             toolStrip2.Name = "toolStrip2";
             toolStrip2.RightToLeft = RightToLeft.Yes;
-            toolStrip2.Size = new Size(446, 28);
+            toolStrip2.Size = new Size(477, 28);
             toolStrip2.TabIndex = 14;
             toolStrip2.Text = "toolStrip2";
             // 
@@ -279,7 +279,7 @@
             mnuSkipAfterAWhile.CheckOnClick = true;
             mnuSkipAfterAWhile.Name = "mnuSkipAfterAWhile";
             mnuSkipAfterAWhile.Size = new Size(287, 22);
-            mnuSkipAfterAWhile.Text = "Auto skip after 3 minutes of scanning";
+            mnuSkipAfterAWhile.Text = "Auto skip after 5 minutes of scanning";
             mnuSkipAfterAWhile.Click += mnuSkipAfterAWhile_Click;
             // 
             // toolStripSeparator6
