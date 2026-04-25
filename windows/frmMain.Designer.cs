@@ -143,6 +143,9 @@
             seperatorPaused = new ToolStripSeparator();
             lblScanPaused = new ToolStripLabel();
             toolStripLabel4 = new ToolStripLabel();
+            mnuIPRangeActions = new ContextMenuStrip(components);
+            mnuClearIPRange = new ToolStripMenuItem();
+            mnuAddAnIPRange = new ToolStripMenuItem();
             groupBox1.SuspendLayout();
             toolStrip2.SuspendLayout();
             toolStrip1.SuspendLayout();
@@ -157,6 +160,7 @@
             mnuMain.SuspendLayout();
             mnuResultsActions.SuspendLayout();
             toolStripBottom.SuspendLayout();
+            mnuIPRangeActions.SuspendLayout();
             SuspendLayout();
             // 
             // txtLog
@@ -229,10 +233,10 @@
             toolStrip2.Dock = DockStyle.None;
             toolStrip2.GripStyle = ToolStripGripStyle.Hidden;
             toolStrip2.Items.AddRange(new ToolStripItem[] { prgOveral, toolStripLabel1, btnSkipCurRange, prgCurRange, toolStripLabel2 });
-            toolStrip2.Location = new Point(390, 52);
+            toolStrip2.Location = new Point(421, 52);
             toolStrip2.Name = "toolStrip2";
             toolStrip2.RightToLeft = RightToLeft.Yes;
-            toolStrip2.Size = new Size(477, 28);
+            toolStrip2.Size = new Size(446, 28);
             toolStrip2.TabIndex = 14;
             toolStrip2.Text = "toolStrip2";
             // 
@@ -738,6 +742,7 @@
             listCFIPList.View = View.Details;
             listCFIPList.ColumnClick += listCFIPList_ColumnClick;
             listCFIPList.ItemChecked += listCFIPList_ItemChecked;
+            listCFIPList.MouseDown += listCFIPList_MouseDown;
             // 
             // headIPRange
             // 
@@ -1186,6 +1191,26 @@
             toolStripLabel4.Size = new Size(86, 22);
             toolStripLabel4.Text = "toolStripLabel4";
             // 
+            // mnuIPRangeActions
+            // 
+            mnuIPRangeActions.Items.AddRange(new ToolStripItem[] { mnuAddAnIPRange, mnuClearIPRange });
+            mnuIPRangeActions.Name = "mnuIPRangeActions";
+            mnuIPRangeActions.Size = new Size(181, 70);
+            // 
+            // mnuClearIPRange
+            // 
+            mnuClearIPRange.Name = "mnuClearIPRange";
+            mnuClearIPRange.Size = new Size(180, 22);
+            mnuClearIPRange.Text = "Clear IP range";
+            mnuClearIPRange.Click += mnuClearIPRange_Click;
+            // 
+            // mnuAddAnIPRange
+            // 
+            mnuAddAnIPRange.Name = "mnuAddAnIPRange";
+            mnuAddAnIPRange.Size = new Size(180, 22);
+            mnuAddAnIPRange.Text = "Add an IP range";
+            mnuAddAnIPRange.Click += mnuAddAnIPRange_Click;
+            // 
             // frmMain
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -1227,6 +1252,7 @@
             mnuResultsActions.ResumeLayout(false);
             toolStripBottom.ResumeLayout(false);
             toolStripBottom.PerformLayout();
+            mnuIPRangeActions.ResumeLayout(false);
             ResumeLayout(false);
             PerformLayout();
         }
@@ -1345,5 +1371,8 @@
         private ToolStripComboBox comboCheckType;
         private ColumnHeader hdrUPDelay;
         private ToolStripComboBox comboFronting;
+        private ContextMenuStrip mnuIPRangeActions;
+        private ToolStripMenuItem mnuClearIPRange;
+        private ToolStripMenuItem mnuAddAnIPRange;
     }
 }

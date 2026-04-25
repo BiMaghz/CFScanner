@@ -197,7 +197,7 @@ namespace WinCFScan
         {
             if (getSelectedFrontingType() == FrontingType.NO && getDownloadTargetSpeed().isSpeedZero())
                 return false;
-            
+
             return true;
         }
 
@@ -215,8 +215,8 @@ namespace WinCFScan
                 addTextLog($"Can not start while app is scanning.");
                 return;
             }
-            
-            if (! isValidScanSettings())
+
+            if (!isValidScanSettings())
             {
                 addTextLog($"You are not allowed to set Fronting test to NO and No Speed Test at the same time!");
                 return;
@@ -465,11 +465,11 @@ namespace WinCFScan
             var pInf = scanEngine.progressInfo;
             if (isScanRunning() || forceUpdate)
             {
-                int curRangeNumber = Math.Max(pInf.currentIPRangesNumber - 1, 0);
+                int curRangeNumber = Math.Max(pInf.currentIPRangesNumber, 0);
 
                 lblLastIPRange.Text = $"Current IP range: {pInf.currentIPRange} ({curRangeNumber:n0}/{pInf.totalIPRanges:n0})";
                 labelLastIPChecked.Text = $"Last checked IP:  {pInf.lastCheckedIP} ({pInf.totalCheckedIPInCurIPRange:n0}/{pInf.currentIPRangeTotalIPs:n0})";
-                lblTotalWorkingIPs.Text = $"Total working IPs found:  {pInf.scanResults.totalFoundWorkingIPs:n0}";
+                lblTotalWorkingIPs.Text = $"Total working IPs found:  {pInf.scanResults.totalFoundWorkingIPs:n0}/{pInf.totalCheckedIP:n0}";
                 if (pInf.scanResults.fastestIP != null)
                 {
                     long delay = scanEngine.checkType == CheckType.UPLOAD ? pInf.scanResults.fastestIP.uploadDelay : pInf.scanResults.fastestIP.downloadDelay;
@@ -805,7 +805,8 @@ namespace WinCFScan
             {
                 fillResultsListView(openFileDialog1.FileName, true);
                 tabControl1.SelectedIndex = 1;
-            };
+            }
+            ;
 
         }
 
@@ -1110,6 +1111,25 @@ namespace WinCFScan
             return true;
         }
 
+        private bool getIPRangeFromUser(out string ipRange, out uint total, string title)
+        {
+            ipRange = Tools.ShowDialog("Enter a valid IP range:", title);
+            total = 0;
+
+            if (ipRange == "" || ipRange == null) { return false; }
+
+            total = IPAddressExtensions.getIPRangeTotalIPs(ipRange);
+
+            if (!IPAddressExtensions.isValidIPRange(ipRange) || total <= 0)
+            {
+                // msg
+                MessageBox.Show("Invalid IP range is entered!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            return true;
+        }
+
         private void mnuListViewCopyIP_Click(object sender, EventArgs e)
         {
             var IPAddr = getSelectedIPAddress();
@@ -1158,7 +1178,8 @@ namespace WinCFScan
                 {
                     addTextLog($"Could not find any valid IP ranges in '{openFileDialog1.FileName}'");
                 }
-            };
+            }
+            ;
 
         }
 
@@ -1194,7 +1215,8 @@ namespace WinCFScan
                 {
                     addTextLog($"Could save into '{saveFileDialog1.FileName}'");
                 }
-            };
+            }
+            ;
         }
 
         private bool isScanRunning()
@@ -1274,7 +1296,8 @@ namespace WinCFScan
                 {
                     addTextLog($"Adding custom config is failed: {errorMessage}");
                 }
-            };
+            }
+            ;
         }
 
         // Monitoring exceptions:
@@ -1470,7 +1493,8 @@ namespace WinCFScan
                 {
                     // reload cf ip ranges
                     loadCFIPListView();
-                };
+                }
+                ;
             }
             else
                 addTextLog("ClientConfig is null!");
@@ -1774,6 +1798,40 @@ namespace WinCFScan
                 updateUIControls(false);
 
                 addTextLog("Paused scan is stopped.", true);
+            }
+        }
+
+        private void listCFIPList_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                mnuIPRangeActions.Show((Control)sender, e.X, e.Y);
+            }
+        }
+
+        // clear ip range
+        private void mnuClearIPRange_Click(object sender, EventArgs e)
+        {
+            if (!isScanRunningOrPaused())
+            {
+                scanEngine.ipListLoader.clearList();
+                listCFIPList.Items.Clear();
+                updateCFIPListStatusText();
+            }
+        }
+
+        // add an ip range menu click
+        private void mnuAddAnIPRange_Click(object sender, EventArgs e)
+        {
+            string ipRange;
+            uint total;
+            if (getIPRangeFromUser(out ipRange, out total, "Add IP Range"))
+            {
+                scanEngine.ipListLoader.addIPRange(ipRange);          
+                var lvwItem = listCFIPList.Items.Add(new ListViewItem(new string[] { ipRange, $"{total:n0}" }));
+                lvwItem.Checked = true;
+                addTextLog($"New IP range added {ipRange} with {total} IPs");
+
             }
         }
     }
