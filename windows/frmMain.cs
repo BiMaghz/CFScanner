@@ -1823,6 +1823,9 @@ namespace WinCFScan
         // add an ip range menu click
         private void mnuAddAnIPRange_Click(object sender, EventArgs e)
         {
+            if (isScanRunningOrPaused())
+                return;
+            
             string ipRange;
             uint total;
             if (getIPRangeFromUser(out ipRange, out total, "Add IP Range"))
