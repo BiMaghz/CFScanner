@@ -1117,10 +1117,10 @@ namespace WinCFScan
             total = 0;
 
             if (ipRange == "" || ipRange == null) { return false; }
+            
+            bool isValid = IPAddressExtensions.isValidIPRange(ipRange);
 
-            total = IPAddressExtensions.getIPRangeTotalIPs(ipRange);
-
-            if (!IPAddressExtensions.isValidIPRange(ipRange) || total <= 0)
+            if (!isValid || (total = IPAddressExtensions.getIPRangeTotalIPs(ipRange)) <= 0)
             {
                 // msg
                 MessageBox.Show("Invalid IP range is entered!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);

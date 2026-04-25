@@ -175,7 +175,25 @@ namespace WinCFScan.Classes.IP
 
         public static bool isValidIPRange(string ipRange)
         {
-            return ipRange != null && ipRange.Split(".").Count() == 4 && ipRange.Contains("/");
+            if (ipRange == null || ipRange.Split(".").Count() != 4 || !ipRange.Contains('/') || ipRange.Length < 9)
+                return false;
+
+            var parts = ipRange.Split("/");
+            
+            if (parts.Length != 2)
+                return false;
+            
+            if (! Int32.TryParse(parts[1], out int net)) {
+                return false;
+            }
+
+            if (net <= 0 || net > 32)
+                return false;
+
+            if (! IPAddress.TryParse(parts[0], out IPAddress ip))
+                return false;
+
+            return true;
         }
 
         public static bool isValidIPAddress(string stringIP)
