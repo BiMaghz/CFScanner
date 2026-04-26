@@ -144,8 +144,9 @@
             lblScanPaused = new ToolStripLabel();
             toolStripLabel4 = new ToolStripLabel();
             mnuIPRangeActions = new ContextMenuStrip(components);
-            mnuClearIPRange = new ToolStripMenuItem();
             mnuAddAnIPRange = new ToolStripMenuItem();
+            mnuClearIPRange = new ToolStripMenuItem();
+            mnuAddIPRangesFromClipboard = new ToolStripMenuItem();
             groupBox1.SuspendLayout();
             toolStrip2.SuspendLayout();
             toolStrip1.SuspendLayout();
@@ -846,7 +847,6 @@
             btnResultsActions.UseVisualStyleBackColor = true;
             btnResultsActions.Click += btnResultsActions_Click;
             btnResultsActions.KeyDown += btnResultsActions_KeyDown;
-            btnResultsActions.KeyPress += btnResultsActions_KeyPress;
             btnResultsActions.MouseClick += btnResultsActions_MouseClick;
             // 
             // mnuMain
@@ -1193,23 +1193,30 @@
             // 
             // mnuIPRangeActions
             // 
-            mnuIPRangeActions.Items.AddRange(new ToolStripItem[] { mnuAddAnIPRange, mnuClearIPRange });
+            mnuIPRangeActions.Items.AddRange(new ToolStripItem[] { mnuAddAnIPRange, mnuAddIPRangesFromClipboard, mnuClearIPRange });
             mnuIPRangeActions.Name = "mnuIPRangeActions";
-            mnuIPRangeActions.Size = new Size(181, 70);
-            // 
-            // mnuClearIPRange
-            // 
-            mnuClearIPRange.Name = "mnuClearIPRange";
-            mnuClearIPRange.Size = new Size(180, 22);
-            mnuClearIPRange.Text = "Clear IP range";
-            mnuClearIPRange.Click += mnuClearIPRange_Click;
+            mnuIPRangeActions.Size = new Size(230, 92);
             // 
             // mnuAddAnIPRange
             // 
             mnuAddAnIPRange.Name = "mnuAddAnIPRange";
-            mnuAddAnIPRange.Size = new Size(180, 22);
+            mnuAddAnIPRange.Size = new Size(229, 22);
             mnuAddAnIPRange.Text = "Add an IP range";
             mnuAddAnIPRange.Click += mnuAddAnIPRange_Click;
+            // 
+            // mnuClearIPRange
+            // 
+            mnuClearIPRange.Name = "mnuClearIPRange";
+            mnuClearIPRange.Size = new Size(229, 22);
+            mnuClearIPRange.Text = "Clear IP range";
+            mnuClearIPRange.Click += mnuClearIPRange_Click;
+            // 
+            // mnuAddIPRangesFromClipboard
+            // 
+            mnuAddIPRangesFromClipboard.Name = "mnuAddIPRangesFromClipboard";
+            mnuAddIPRangesFromClipboard.Size = new Size(229, 22);
+            mnuAddIPRangesFromClipboard.Text = "Add IP ranges from clipboard";
+            mnuAddIPRangesFromClipboard.Click += mnuAddIPRangesFromClipboard_Click;
             // 
             // frmMain
             // 
@@ -1229,7 +1236,6 @@
             Text = "Cloudflare Scan";
             FormClosing += frmMain_FormClosing;
             KeyDown += frmMain_KeyDown;
-            KeyPress += frmMain_KeyPress;
             groupBox1.ResumeLayout(false);
             groupBox1.PerformLayout();
             toolStrip2.ResumeLayout(false);
@@ -1374,5 +1380,6 @@
         private ContextMenuStrip mnuIPRangeActions;
         private ToolStripMenuItem mnuClearIPRange;
         private ToolStripMenuItem mnuAddAnIPRange;
+        private ToolStripMenuItem mnuAddIPRangesFromClipboard;
     }
 }

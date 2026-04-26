@@ -650,10 +650,14 @@ namespace WinCFScan
             {
 
                 // check if client config file is exists and update
-                if (configManager.getClientConfig() != null && configManager.getClientConfig().isClientConfigOld())
+                Task.Factory.StartNew(() =>
                 {
-                    remoteUpdateClientConfig();
-                }
+                    if (configManager.getClientConfig() != null && configManager.getClientConfig().isClientConfigOld())
+                    {
+                        remoteUpdateClientConfig();
+                    }
+                });
+
 
                 //Load cf ip ranges
                 loadCFIPListView();
@@ -671,7 +675,7 @@ namespace WinCFScan
                 // check for updates
                 if (appUpdateChecker.shouldCheck())
                 {
-                    checkForUpdate();
+                    checkForAppUpdate();
                 }
 
                 oneTimeChecked = true;
@@ -706,7 +710,7 @@ namespace WinCFScan
         }
 
         // check for update
-        private void checkForUpdate(bool logNoNewVersion = false)
+        private void checkForAppUpdate(bool logNoNewVersion = false)
         {
             Task.Factory.StartNew(() => { appUpdateChecker.check(); })
             .ContinueWith(done =>
@@ -717,7 +721,7 @@ namespace WinCFScan
                 }
                 else if (appUpdateChecker.updateCheckResult == UpdateCheckResult.HasError)
                 {
-                    addTextLog("Something went wrong while checking for update!");
+                    addTextLog("Something went wrong while checking for app update!");
                 }
                 else if (logNoNewVersion)
                 {
@@ -1117,7 +1121,7 @@ namespace WinCFScan
             total = 0;
 
             if (ipRange == "" || ipRange == null) { return false; }
-            
+
             bool isValid = IPAddressExtensions.isValidIPRange(ipRange);
 
             if (!isValid || (total = IPAddressExtensions.getIPRangeTotalIPs(ipRange)) <= 0)
@@ -1248,7 +1252,7 @@ namespace WinCFScan
         private void checkForUpdateToolStripMenuItem_Click(object sender, EventArgs e)
         {
             addTextLog("Checking for new version...");
-            checkForUpdate(true);
+            checkForAppUpdate(true);
         }
 
         private void comboConfigs_SelectedIndexChanged(object sender, EventArgs e)
@@ -1703,16 +1707,6 @@ namespace WinCFScan
             }
         }
 
-        private void btnResultsActions_KeyPress(object sender, KeyPressEventArgs e)
-        {
-
-        }
-
-        private void frmMain_KeyPress(object sender, KeyPressEventArgs e)
-        {
-
-        }
-
         private void listResults_SelectedIndexChanged(object sender, EventArgs e)
         {
             //sendScreenReaderMsg(getSelectedIPAddress() ?? "");
@@ -1817,6 +1811,8 @@ namespace WinCFScan
                 scanEngine.ipListLoader.clearList();
                 listCFIPList.Items.Clear();
                 updateCFIPListStatusText();
+                addTextLog("All IP ranges removed from list.", true);
+
             }
         }
 
@@ -1825,16 +1821,59 @@ namespace WinCFScan
         {
             if (isScanRunningOrPaused())
                 return;
-            
+
             string ipRange;
             uint total;
             if (getIPRangeFromUser(out ipRange, out total, "Add IP Range"))
             {
-                scanEngine.ipListLoader.addIPRange(ipRange);          
+                scanEngine.ipListLoader.addIPRange(ipRange);
                 var lvwItem = listCFIPList.Items.Add(new ListViewItem(new string[] { ipRange, $"{total:n0}" }));
                 lvwItem.Checked = true;
-                addTextLog($"New IP range added {ipRange} with {total} IPs");
+                addTextLog($"New IP range added {ipRange} with {total} IPs", true);
 
+            }
+        }
+
+        // add ip ranges from clipboard, menu click
+        private void mnuAddIPRangesFromClipboard_Click(object sender, EventArgs e)
+        {
+            if (isScanRunningOrPaused())
+                return;
+
+            string ranges = Clipboard.GetText(TextDataFormat.Text);
+            uint totalIPs = 0, totalIPRanges = 0;
+
+            if (ranges != null)
+            {
+                var rangesLines = ranges.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                listCFIPList.BeginUpdate();
+                isUpdatinglistCFIP = true;
+
+                foreach (var ipRange in rangesLines)
+                {
+                    if (scanEngine.ipListLoader.addIPRange(ipRange))
+                    {
+                        uint total = IPAddressExtensions.getIPRangeTotalIPs(ipRange);
+                        totalIPs += total;
+                        totalIPRanges++;
+                        var lvwItem = listCFIPList.Items.Add(new ListViewItem(new string[] { ipRange, $"{total:n0}" }));
+                        lvwItem.Checked = true;
+                    }
+                }
+
+                listCFIPList.EndUpdate();
+                isUpdatinglistCFIP = false;
+            }
+
+            if (totalIPs > 0)
+            {
+                addTextLog($"{totalIPRanges:n0} IP ranges with {totalIPs:n0} IPs added from clipboard.", true);
+                addTextLog($"Total {scanEngine.ipListLoader.totalIPs:n0} IPs are ready to be scanned.");
+                updateCFIPListStatusText();
+            }
+            else
+            {
+                addTextLog("No valid IP ranges found in clipboard.", true);
             }
         }
     }
