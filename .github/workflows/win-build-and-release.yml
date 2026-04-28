@@ -1,0 +1,86 @@
+name: Windows Build and Release
+
+# To trigger this action add a tag like win-v1* then push it. e.g:
+# git pull
+# git tag win-v1.2.2
+# git push origin --tags
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'win-v*' # Trigger only when a tag starting with 'win-v' is pushed (e.g., win-v1.0.0)
+
+permissions:
+  contents: write
+  
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    # Step 1: Checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    # Step 2: Set up .NET environment
+    #- name: Setup .NET
+    #  uses: actions/setup-dotnet@v4
+    #  with:
+    #    dotnet-version: 8.0.x 
+
+    # Step 3: Restore dependencies
+    - name: Restore dependencies
+      run: cd windows; dotnet restore
+
+    # Step 4: Build the application
+    - name: Build the application
+      run: cd windows; dotnet build --configuration Release
+
+    # Step 5: Publish the application
+    - name: Publish the application
+      run: cd windows; dotnet publish -c Release -o ./publish
+
+    # Step 6: Copy additional files into the publish directory
+    - name: Copy additional files
+      run: |
+         cd windows; 
+         Copy-Item -Path assets/* -Destination ./publish/ -Recurse
+      shell: pwsh
+       
+    # Step 7: Archive the build output with directories
+    - name: Create ZIP file
+      run: cd windows; Compress-Archive -Path ./publish/* -DestinationPath ./WinCFScan-${{ github.ref_name }}.zip
+      shell: pwsh
+
+    # Step 8: Upload the build artifact
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: WinCFScan-${{ github.ref_name }}.zip
+        path: ./windows/WinCFScan-${{ github.ref_name }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Step 1: Download the artifact
+    - name: Download build artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: WinCFScan-${{ github.ref_name }}.zip
+
+    # Step 2: Create a GitHub release
+    - name: Create GitHub Release
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: WinCFScan-${{ github.ref_name }}.zip
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag: ${{ github.ref_name }}
+        generateReleaseNotes: true
+        name: ${{ github.ref_name }}
+        body: |
+          This release contains the compiled 64bit executable for the WinCFScan application.
+          You need .Net 8 runtime installed on your windows to run it.
+
