@@ -17,7 +17,7 @@ namespace WinCFScan.Classes.IP
 
             var ipRange = new List<string>();
 
-            for (uint n = start; n < end; n++)
+            for (uint n = start; n <= end; n++)
             {
                 ipRange.Add(new IPAddress(BitConverter.GetBytes(n).Reverse().ToArray()).ToString());
             }
@@ -34,7 +34,7 @@ namespace WinCFScan.Classes.IP
          }
 
 
-        public static void getIPRangeInfo(string ip, int network, out uint start,  out uint end,  out uint total)
+        public static void getIPRangeInfo2(string ip, int network, out uint start,  out uint end,  out uint total)
         {
             IPAddress netAddr = SubnetMask.CreateByNetBitLength(network);
             byte[] mask = netAddr.GetAddressBytes();
@@ -49,6 +49,43 @@ namespace WinCFScan.Classes.IP
             start = BitConverter.ToUInt32(netid.Reverse().ToArray(), 0) + 1;
             end = BitConverter.ToUInt32(brCast.Reverse().ToArray(), 0);
             total = end - start;
+        }
+
+        public static void getIPRangeInfo(string ip, int prefix, out uint start, out uint end, out uint total)
+        {
+            // تبدیل IP به uint (Big Endian → Little Endian درست)
+            uint ipUint = IpToUint(ip);
+
+            // ساخت subnet mask
+            uint mask = prefix == 0 ? 0 : 0xFFFFFFFF << (32 - prefix);
+
+            uint network = ipUint & mask;
+            uint broadcast = network | ~mask;
+
+            if (prefix >= 31)
+            {
+                // /31 و /32 → همه IPها usable هستن
+                start = network;
+                end = broadcast;
+                total = broadcast - network + 1;
+            }
+            else
+            {
+                // حالت معمولی
+                start = network + 1;
+                end = broadcast - 1;
+                total = (broadcast - network) - 1;
+            }
+        }
+
+        private static uint IpToUint(string ip)
+        {
+            var bytes = IPAddress.Parse(ip).GetAddressBytes();
+
+            if (BitConverter.IsLittleEndian)
+                Array.Reverse(bytes);
+
+            return BitConverter.ToUInt32(bytes, 0);
         }
 
         public static List<string> getAllIPInRange(string ipAndNet)
@@ -138,7 +175,25 @@ namespace WinCFScan.Classes.IP
 
         public static bool isValidIPRange(string ipRange)
         {
-            return ipRange != null && ipRange.Split(".").Count() == 4 && ipRange.Contains("/");
+            if (ipRange == null || ipRange.Split(".").Count() != 4 || !ipRange.Contains('/') || ipRange.Length < 9)
+                return false;
+
+            var parts = ipRange.Split("/");
+            
+            if (parts.Length != 2)
+                return false;
+            
+            if (! Int32.TryParse(parts[1], out int net)) {
+                return false;
+            }
+
+            if (net <= 0 || net > 32)
+                return false;
+
+            if (! IPAddress.TryParse(parts[0], out IPAddress ip))
+                return false;
+
+            return true;
         }
 
         public static bool isValidIPAddress(string stringIP)

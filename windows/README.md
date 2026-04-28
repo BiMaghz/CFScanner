@@ -15,24 +15,14 @@ This powerful tool help you to scan all IP ranges of Cloudflare to find clean an
 * User friendly and easy to use and includes some accessibility features for blind people.
 
 ## Requirements
-To run this app you need to have `.NET Desktop Runtime 6` installed on your Windows which is normally installed on newer versions of Windows.
+To run this app you need to have `.NET Desktop Runtime 8` installed on your Windows which is normally installed on newer versions of Windows.
 However if you don't already have it installed on your PC then you can download it from here:
 
-Look for **.NET Desktop Runtime 6** in download page:
+Look for **.NET Desktop Runtime 8** in download page:
 ```
-https://dotnet.microsoft.com/en-us/download/dotnet/6.0
+https://dotnet.microsoft.com/en-us/download/dotnet/8.0
 ```
 
-Or use this direct links:
-
-For 64 bit Windows:
-```
-https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-desktop-6.0.14-windows-x64-installer
-```
-For 32 bit Windows:
-```
-https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-desktop-6.0.14-windows-x86-installer
-```
 
 ## How to use
 Just download latest release from [Releases](https://github.com/MortezaBashsiz/CFScanner/releases) section and extract zip file to disk, then run `WinCFScan.exe`.
@@ -54,7 +44,7 @@ Just download latest release from [Releases](https://github.com/MortezaBashsiz/C
 Only advanced users:
 
 If you want to build and compile it yourself then download source code to your PC and then open `WinCFScan.sln` file in `Visual Studio 2022`.
-Then you can build it from the Build menu. After that you **must** copy content of `assets` folder into executable folder which usually is something like `bin/Debug/net6.0-windows`.
+Then you can build it from the Build menu. After that you **must** copy content of `assets` folder into executable folder which usually is something like `bin/Debug/net8.0-windows7.0`.
 
 # Disclaimer
 This app is provided as is, and we make no warranties or guarantees about its performance or suitability for your specific needs. Use at your own risk.

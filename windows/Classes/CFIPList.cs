@@ -37,20 +37,34 @@ namespace WinCFScan.Classes
 
         private void validateIPList(string[] loadedIPList)
         {
-            validIPRanges.Clear();
-            totalIPs = 0;
+            clearList();
+
             foreach (var ipRange in loadedIPList)
             {
-                if (IPAddressExtensions.isValidIPRange(ipRange))
+                addIPRange(ipRange);
+            }
+        }
+
+        public bool addIPRange(string ipRange)
+        {
+            if (IPAddressExtensions.isValidIPRange(ipRange))
+            {
+                var rangeTotalIPs = IPAddressExtensions.getIPRangeTotalIPs(ipRange);
+                if (rangeTotalIPs > 0)
                 {
-                    var rangeTotalIPs = IPAddressExtensions.getIPRangeTotalIPs(ipRange);
-                    if (rangeTotalIPs > 0)
-                    {
-                        this.validIPRanges.Add(new RangeInfo(ipRange, rangeTotalIPs));
-                        totalIPs += rangeTotalIPs;
-                    }
+                    this.validIPRanges.Add(new RangeInfo(ipRange, rangeTotalIPs));
+                    totalIPs += rangeTotalIPs;
+                    return true;
                 }
             }
+
+            return false;
+        }
+
+        public void clearList()
+        {
+            validIPRanges.Clear();
+            totalIPs = 0;
         }
 
         public string[] getIPList()

@@ -338,13 +338,13 @@ namespace WinCFScan.Classes
             if (scanType == ScanType.SCAN_IN_PERV_RESULTS)
                 return;
 
-            // skip after 3 minute
+            // skip after 5 minute
             if (skipAfterAWhileEnabled)
             {
-                if (curRangeTimer.Elapsed.TotalMinutes >= 3)
+                if (curRangeTimer.Elapsed.TotalMinutes >= 5)
                 {
                     if (!progressInfo.skipCurrentIPRange)
-                        logMessages.Add($"Auto skipping {progressInfo.currentIPRange} after 3 minutes of scanning.");
+                        logMessages.Add($"Auto skipping {progressInfo.currentIPRange} after 5 minutes of scanning.");
 
                     skipCurrentIPRange();
                 }
