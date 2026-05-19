@@ -185,12 +185,11 @@ fncCheckIPList() {
     fi
     
     domainFronting="NULL"
-    if [[ "$quickOrNot" == "NO" ]]; then
-      echo $timeoutCommand 1 curl -k -s --tlsv1.2 -H "Host: $testHost" --resolve "$testHost:443:$ip" "https://$testHost${downloadPath}10" 2>/dev/null
+    if [[ "$quickOrNot" == "YES" ]]; then
       domainFronting=$($timeoutCommand 1 curl -k -s --tlsv1.2 -H "Host: $testHost" --resolve "$testHost:443:$ip" "https://$testHost${downloadPath}10" 2>/dev/null)
     fi
 
-    if [[ "$domainFronting" != "NULL" && "$quickOrNot" == "NO" ]]; then
+    if [[ "$domainFronting" != "0000000000" && "$quickOrNot" == "YES" ]]; then
       echo -e "${RED}FAILED - DF${NC} $ip"
       continue
     fi
@@ -206,7 +205,7 @@ fncCheckIPList() {
         echo "OS not supported only Linux or Mac"
         exit 1
       fi
-      configServerName="$randomUUID.$mainDomain"
+      configServerName="$configHost"
       ipConfigFile="$tempConfigDir/config.json.$ip.json"
       cp "$scriptDir/config.json.temp" "$ipConfigFile"
       ipO1=$(echo "$ip" | awk -F '.' '{print $1}')
@@ -248,7 +247,7 @@ fncCheckIPList() {
         else
           downTimeMil=$(fncCurlMs "$timeoutCommand" -s -w "TIME: %{time_total}\n" -H "Host: $testHost" --resolve "$testHost:443:$ip" "https://$testHost${downloadPath}$fileSize" --output /dev/null)
         fi
-        if [[ $downTimeMil -gt 100 ]]; then downSuccessedCount=$((downSuccessedCount+1)); else downTimeMil=0; fi
+        if [[ $downTimeMil -gt 10 ]]; then downSuccessedCount=$((downSuccessedCount+1)); else downTimeMil=0; fi
       fi
 
       if [[ "$downloadOrUpload" == "UP" || "$downloadOrUpload" == "BOTH" ]]; then
@@ -258,7 +257,7 @@ fncCheckIPList() {
           result=$(fncCurlMs "$timeoutCommand" -s -w "\nTIME: %{time_total}\n" -H "Host: $testHost" --resolve "$testHost:443:$ip" --data "@$uploadFile" "https://$testHost${uploadPath}")
         fi
         upTimeMil="$result"
-        if [[ $upTimeMil -gt 100 ]]; then upSuccessedCount=$((upSuccessedCount+1)); else upTimeMil=0; fi
+        if [[ $upTimeMil -gt 10 ]]; then upSuccessedCount=$((upSuccessedCount+1)); else upTimeMil=0; fi
       fi
 
       downTotalTime=$((downTotalTime+downTimeMil))
@@ -276,15 +275,15 @@ fncCheckIPList() {
     fi
 
     if [[ "$downOK" == "YES" && "$upOK" == "YES" ]]; then
-      if [[ "$downRealTime" && $downRealTime -gt 100 ]] || [[ "$upRealTime" && $upRealTime -gt 100 ]]; then
+      if [[ "$downRealTime" && $downRealTime -gt 10 ]] || [[ "$upRealTime" && $upRealTime -gt 10 ]]; then
         echo -e "${GREEN}OK${NC} $ip ${BLUE}DOWN: Avg $downRealTime $downAvgStr ${ORANGE}UP: Avg $upRealTime, $upAvgStr${NC}"
-        [[ "$downRealTime" && $downRealTime -gt 100 ]] && echo "$downRealTime, $downAvgStr DOWN FOR IP $ip" >> "$resultFile"
-        [[ "$upRealTime" && $upRealTime -gt 100 ]] && echo "$upRealTime, $upAvgStr UP FOR IP $ip" >> "$resultFile"
+        [[ "$downRealTime" && $downRealTime -gt 10 ]] && echo "$downRealTime, $downAvgStr DOWN FOR IP $ip" >> "$resultFile"
+        [[ "$upRealTime" && $upRealTime -gt 10 ]] && echo "$upRealTime, $upAvgStr UP FOR IP $ip" >> "$resultFile"
       else
-        echo -e "${RED}FAILED${NC} $ip"
+        echo -e "${RED}FAILED - T${NC} $ip"
       fi
     else
-      echo -e "${RED}FAILED${NC} $ip"
+      echo -e "${RED}FAILED - DU${NC} $ip"
     fi
   done
 }

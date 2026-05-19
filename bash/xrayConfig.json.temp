@@ -32,14 +32,15 @@
             "port": CFPORTCFPORT,
             "users": [
               {
-                "id": "IDID"
+                "id": "IDID",
+                "encryption":"none"
               }
             ]
           }
         ]
       },
       "streamSettings": {
-        "network": "ws",
+        "network": "xhttp",
         "security": "tls",
         "wsSettings": {
           "headers": {
