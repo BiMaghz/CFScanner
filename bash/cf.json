@@ -1,8 +1,8 @@
 {
 	"id": "9f0ecc69-7008-4822-9089-ea0b0719e0d2",
-	"host": "nipo.ciron.net", 
+	"host": "your.domain", 
 	"port": "443",
 	"path": "/",
-	"serverName": "nipo.ciron.net",
+	"serverName": "your.domain",
 	"subnetsList": "https://raw.githubusercontent.com/MortezaBashsiz/CFScanner/main/config/cf.local.iplist"
 }
