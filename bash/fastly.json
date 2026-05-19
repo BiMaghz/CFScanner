@@ -1,0 +1,8 @@
+{
+	"id": "9f0ecc69-7008-4822-9089-ea0b0719e0d2",
+	"host": "mrtza.pourynetwork.app", 
+	"port": "443",
+	"path": "/",
+	"serverName": "mrtza.pourynetwork.app",
+	"subnetsList": "https://raw.githubusercontent.com/MortezaBashsiz/CFScanner/main/config/cf.local.iplist"
+}
