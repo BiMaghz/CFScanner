@@ -1,64 +1,41 @@
-# CFScanner
+# CFScanner GoLang
 
 ![go]
-![version]
-![license]
 
-**CFScanner** is a fast, standalone Cloudflare edge IP scanner written in Go. It identifies Cloudflare edge IPs that are accessible and performant for use with VLESS/Xray-based proxies.
+CFScanner is a powerful tool written in Golang specifically designed to scan Cloudflare's edge IPs and identify viable options for use with V2Ray/Xray.
 
-It ships with a built-in **xray-core** engine, so no external binaries are required. In simple mode it tests IPs with a lightweight TLS connection. In VPN mode it tunnels full download and upload speed tests through your VLESS proxy to accurately measure real-world performance.
+Its main objective is to locate edge IPs that are accessible and not blocked. With its built-in xray-core, CFScanner leverages xray+vmess+websocket+tls by default when the VPN flag is enabled.
 
----
+If you prefer to use it behind your Cloudflare proxy, you will need to set up a vmess account. However, if no specific configuration is provided, the program will automatically use the default settings.
+# Requirements
 
-## Table of Contents
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Flags Reference](#flags-reference)
-- [Interactive Controls](#interactive-controls)
-- [Output](#output)
-- [License](#license)
+- Golang v1.20+
 
----
+# Installation
 
-## Features
-- **Two scan modes**: fast simple test (TLS fronting check) and full VPN speed test (download + upload via Xray-core).
-- **Multiple transports**: `ws`, `httpupgrade`, `grpc`, `xhttp` — each with optional TLS.
-- **Built-in xray-core**: fully self-contained, no external `xray` binary needed.
-- **Real-time output**: clean, live progress bar with immediate `[OK]` results printed above it.
-- **Subnet grouping**: automatically groups IPs by `/24` and respects per-subnet skip rules.
-- **Interactive controls**: pause, resume, and skip subnets mid-scan without restarting.
-- **Fast shutdown**: pressing `Esc`/`Ctrl+C` cancels all in-flight network requests immediately.
-- **Sorted results**: final output file is sorted ascending by latency.
+### Getting the latest version from release page
+Latest release version of golang CFScanner are available in [releases](https://github.com/BiMaghz/CFScanner/releases)
+section 
 
----
 
-## Requirements
-- **Go 1.20+** — only required if building from source.
-- **Linux / macOS / Windows**.
+### Build instructions
 
----
+If you prefer to build CFScanner from source, you can follow these instructions:
 
-## Installation
-
-### Option 1 — Pre-compiled Binary (Recommended)
-1. Go to the [Releases](https://github.com/MortezaBashsiz/CFScanner/releases) page and download the archive for your OS/architecture.
-2. Extract and place the `CFScanner` executable somewhere convenient.
-3. On Linux/macOS, make it executable:
-   ```bash
-   chmod +x CFScanner
-   ```
-
-### Option 2 — Build from Source
+Clone the repository by running the following command in your terminal:
 ```bash
-git clone https://github.com/MortezaBashsiz/CFScanner.git
+git clone https://github.com/BiMaghz/CFScanner.git
+```
+Navigate to the "golang" directory within the cloned repository:
+
+```bash
 cd CFScanner/golang
-go build -o CFScanner -trimpath -ldflags "-s -w -buildid=" .
 ```
 
----
+Build the binary using the "go build" command with additional flags for trimming the path and setting linker flags for smaller binary size:
+```bash
+go build -o CFScanner -trimpath -ldflags "-s -w -buildid=" .
+```
 
 ## Configuration
 
@@ -203,12 +180,12 @@ All result files are created inside a `result/` directory automatically.
 ./CFScanner -c config.json --vpn -s 172.67.187.19
 ```
 
----
+# License
 
-## License
+CFScanner is released under the [GPL-3](../LICENSE) license.
 
-Released under the [GPL-3.0](LICENSE) license.
+# Contributing
 
-[go]: https://img.shields.io/badge/Go-1.20+-cyan?logo=go
-[version]: https://img.shields.io/badge/Version-2.0-blue
-[license]: https://img.shields.io/badge/License-GPL--3.0-green
+Contributions are welcome! Please read [CONTRIBUTING.md](../CONTRIBUTING.md) for more information.
+
+[go]: https://img.shields.io/badge/Go-cyan?logo=go
