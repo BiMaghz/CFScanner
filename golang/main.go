@@ -5,14 +5,13 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"time"
 )
 
-// Program Info
+// Program Info — default values overridden at build time via -ldflags -X
 var (
-	version  = "v" + time.Now().Format("2006.01.02")
-	build    = "Custom"
-	codename = "CFScanner , CloudFlare Scanner."
+	version  = "dev"
+	build    = "unknown"
+	codename = "CFScanner, Cloudflare IP Scanner"
 )
 
 func Version() string {

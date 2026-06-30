@@ -4,6 +4,7 @@ package logger
 type ScannerManage struct {
 	IP      string
 	Status  LogStatus
-	Message interface{}
+	Message string
 	Cause   string
 }
+

@@ -1,43 +1,92 @@
-## CFScanner Go Releaser Builder
+# CFScanner GoReleaser Configuration
+version: 2
+
 project_name: CFScanner
 
 before:
   hooks:
     - go mod tidy
+    - go vet ./...
 
 builds:
-  - env:
+  - id: linux-amd64
+    binary: CFScanner
+    env:
       - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-      - darwin
-      - android
-      - freebsd
-      - openbsd
-    goarch:
-      - amd64
-      - arm64
-      - 386
-    ignore:
-      - goos: android
-        goarch: 386
+    goos: [linux]
+    goarch: [amd64]
+    ldflags:
+      - -s -w -buildid=
+      - -X main.version={{.Version}}
+      - -X main.build={{.Commit}}
+
+  - id: windows-amd64
+    binary: CFScanner
+    env:
+      - CGO_ENABLED=0
+    goos: [windows]
+    goarch: [amd64]
+    ldflags:
+      - -s -w -buildid=
+      - -X main.version={{.Version}}
+      - -X main.build={{.Commit}}
+
+  - id: android-arm64
+    binary: CFScanner
+    env:
+      - CGO_ENABLED=0
+    goos: [android]
+    goarch: [arm64]
+    ldflags:
+      - -s -w -buildid=
+      - -X main.version={{.Version}}
+      - -X main.build={{.Commit}}
 
 archives:
-  - format: tar.gz
-    # this name template makes the OS and Arch compatible with the results of uname.
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
-    format_overrides:
-      - goos: windows
-        format: zip
+  - id: linux-archive
+    ids: [linux-amd64]
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_Linux_x86_64"
+    files:
+      - config.json.example
+      - README.md
+
+  - id: windows-archive
+    ids: [windows-amd64]
+    format: zip
+    name_template: "{{ .ProjectName }}_Windows_x86_64"
+    files:
+      - config.json.example
+      - README.md
+
+  - id: android-archive
+    ids: [android-arm64]
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_Android_arm64"
+    files:
+      - config.json.example
+      - README.md
+
 checksum:
   name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: BiMaghz
+    name: CFScanner
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-snapshot"

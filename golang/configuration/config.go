@@ -8,48 +8,78 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
 var (
-	PROGRAMDIR, _          = filepath.Abs(filepath.Dir(os.Args[0]))
+	PROGRAMDIR = func() string {
+		exe, err := os.Executable()
+		if err != nil {
+			// fall back to args[0] dir
+			p, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+			return p
+		}
+		return filepath.Dir(exe)
+	}()
 	DIR                    = filepath.Join(PROGRAMDIR, "config")
 	RESULTDIR              = filepath.Join(PROGRAMDIR, "result")
 	StartDtStr             = time.Now().Format("2006-01-02_15-04-05")
-	CSVInterimResultsPath  = filepath.Join(RESULTDIR, StartDtStr+"_result.csv")
-	JSONInterimResultsPath = filepath.Join(RESULTDIR, StartDtStr+"_result.json")
+	ResultsPath            = filepath.Join(RESULTDIR, StartDtStr+"_result.txt")
 	FinalResultsPathSorted = filepath.Join(RESULTDIR, StartDtStr+"_final.txt")
 )
 
+// rawConfig is the on-disk format of config.real
+type rawConfig struct {
+	ID          string `json:"id"`
+	Host        string `json:"host"`
+	Port        string `json:"port"`
+	Path        string `json:"path"`
+	ServerName  string `json:"serverName"`
+	Transport   string `json:"transport"`
+	TLS         bool   `json:"tls"`
+	Fingerprint string `json:"fingerprint"`
+	SubnetsList string `json:"subnetsList"`
+}
+
 func (C Configuration) PrintInformation() {
+	security := "none"
+	if C.Config.TLS {
+		security = "tls"
+	}
 	fmt.Printf(`-------------------------------------
-Configuration :
-User ID : %v%v%v
-WS Header Host: %v%v%v
-WS Header Path : %v%v%v
-Address Port : %v%v%v
-Upload Test : %v%v%v
-Fronting Request Test : %v%v%v
-Minimum Download Speed : %v%v%v
-Maximum Download Time : %v%v%v
-Minimum Upload Speed : %v%v%v
-Maximum Upload Time : %v%v%v
-Fronting Timeout : %v%v%v
-Maximum Download Latency : %v%v%v
-Maximum Upload Latency : %v%v%v
-Number of Tries : %v%v%v
-Xray-core : %v%v%v
-Xray-loglevel : %v%v%v
-Shuffling : %v%v%v
-Writer : %v%v%v
-Total Threads : %v%v%v
+Configuration:
+  User ID       : %v%v%v
+  Host          : %v%v%v
+  Path          : %v%v%v
+  Server Name   : %v%v%v
+  Port          : %v%v%v
+  Transport     : %v%v%v
+  Security      : %v%v%v
+  Fingerprint   : %v%v%v
+  Upload Test   : %v%v%v
+  Fronting Test : %v%v%v
+  Min DL Speed  : %v%v%v KB/s
+  Max DL Time   : %v%v%v s
+  Min UL Speed  : %v%v%v KB/s
+  Max UL Time   : %v%v%v s
+  Fronting TO   : %v%v%v s
+  Max DL Latency: %v%v%v s
+  Max UL Latency: %v%v%v s
+  Tries         : %v%v%v
+  Xray-core     : %v%v%v
+  Xray loglevel : %v%v%v
+  Shuffle       : %v%v%v
+  Threads       : %v%v%v
 -------------------------------------
 `,
 		utils.Colors.OKBLUE, C.Config.UserId, utils.Colors.ENDC,
-		utils.Colors.OKBLUE, C.Config.WsHeaderHost, utils.Colors.ENDC,
-		utils.Colors.OKBLUE, C.Config.WsHeaderPath, utils.Colors.ENDC,
+		utils.Colors.OKBLUE, C.Config.Host, utils.Colors.ENDC,
+		utils.Colors.OKBLUE, C.Config.Path, utils.Colors.ENDC,
+		utils.Colors.OKBLUE, C.Config.ServerName, utils.Colors.ENDC,
 		utils.Colors.OKBLUE, C.Config.AddressPort, utils.Colors.ENDC,
+		utils.Colors.OKBLUE, C.Config.Transport, utils.Colors.ENDC,
+		utils.Colors.OKBLUE, security, utils.Colors.ENDC,
+		utils.Colors.OKBLUE, C.Config.Fingerprint, utils.Colors.ENDC,
 		utils.Colors.OKBLUE, C.Config.DoUploadTest, utils.Colors.ENDC,
 		utils.Colors.OKBLUE, C.Config.DoFrontingTest, utils.Colors.ENDC,
 		utils.Colors.OKBLUE, C.Worker.Download.MinDlSpeed, utils.Colors.ENDC,
@@ -63,93 +93,75 @@ Total Threads : %v%v%v
 		utils.Colors.OKBLUE, C.Worker.Vpn, utils.Colors.ENDC,
 		utils.Colors.OKBLUE, C.LogLevel, utils.Colors.ENDC,
 		utils.Colors.OKBLUE, C.Shuffling, utils.Colors.ENDC,
-		utils.Colors.OKBLUE, C.Config.Writer, utils.Colors.ENDC,
 		utils.Colors.OKBLUE, C.Worker.Threads, utils.Colors.ENDC,
 	)
 }
 
 func (C Configuration) CreateTestConfig(configPath string) Configuration {
-
 	if configPath == "" {
-		log.Fatalf("Configuration file are not loaded please use the --config or -c flag to use the configuration file.")
+		// Fallback to config.json in the executable directory
+		configPath = filepath.Join(DIR, "config.json")
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			log.Fatalf("Configuration file not provided and default 'config.json' not found. Use --config / -c flag.")
+		}
 	}
 
 	jsonFile, err := os.Open(configPath)
 	if err != nil {
-		log.Printf("%vError occurred during opening the configuration file.\n%v",
-			utils.Colors.WARNING, utils.Colors.ENDC)
-		log.Fatal(err)
+		log.Fatalf("Error opening config file: %v", err)
 	}
-	defer func(jsonFile *os.File) {
-		err := jsonFile.Close()
-		if err != nil {
+	defer func() {
+		if cerr := jsonFile.Close(); cerr != nil {
+			log.Printf("Warning: failed to close config file: %v", cerr)
 		}
-	}(jsonFile)
+	}()
 
-	var jsonFileContent map[string]interface{}
-	byteValue, _ := io.ReadAll(jsonFile)
-
-	content := json.Unmarshal(byteValue, &jsonFileContent)
-	if content != nil {
-		return Configuration{}
+	byteValue, err := io.ReadAll(jsonFile)
+	if err != nil {
+		log.Fatalf("Error reading config file: %v", err)
 	}
 
-	C.Config.UserId = jsonFileContent["id"].(string)
-	C.Config.WsHeaderHost = jsonFileContent["host"].(string)
-	C.Config.AddressPort = jsonFileContent["port"].(string)
-	//C.Config.Sni = jsonFileContent["serverName"].(string)
-	C.Config.WsHeaderPath = "/" + strings.TrimLeft(jsonFileContent["path"].(string), "/")
+	var raw rawConfig
+	if err := json.Unmarshal(byteValue, &raw); err != nil {
+		log.Fatalf("Error parsing config JSON: %v", err)
+	}
+
+	// Validate required fields
+	if raw.ID == "" {
+		log.Fatal("Config error: 'id' field is required")
+	}
+	if raw.Port == "" {
+		log.Fatal("Config error: 'port' field is required")
+	}
+	if raw.Transport == "" {
+		raw.Transport = TransportWS // default
+	}
+
+	transport := raw.Transport
+	switch transport {
+	case TransportWS, TransportGRPC, TransportHTTPUpgrade, TransportXHTTP:
+		// valid
+	default:
+		log.Fatalf("Config error: unsupported transport %q. Valid: ws, grpc, httpupgrade, xhttp", transport)
+	}
+
+	if transport == TransportGRPC && !raw.TLS {
+		log.Printf("Warning: gRPC is strongly recommended to be used with TLS. Proceeding anyway.")
+	}
+
+	C.Config.UserId = raw.ID
+	C.Config.Host = raw.Host
+	C.Config.AddressPort = raw.Port
+	C.Config.Path = raw.Path
+	C.Config.ServerName = raw.ServerName
+	C.Config.Transport = transport
+	C.Config.TLS = raw.TLS
+	C.Config.Fingerprint = raw.Fingerprint
+	if C.Config.Fingerprint == "" {
+		C.Config.Fingerprint = "chrome"
+	}
+	C.Config.SubnetsList = raw.SubnetsList
 
 	C.PrintInformation()
 	return C
-}
-
-func CreateInterimResultsFile(interimResultsPath string, nTries int, writer string) error {
-	emptyFile, err := os.Create(interimResultsPath)
-	if err != nil {
-		return fmt.Errorf("failed to create interim results file: %w", err)
-	}
-
-	defer func(emptyFile *os.File) {
-		err := emptyFile.Close()
-		if err != nil {
-
-		}
-	}(emptyFile)
-
-	if strings.ToLower(writer) == "csv" {
-
-		titles := []string{
-			"ip",
-			"avg_download_speed", "avg_upload_speed",
-			"avg_download_latency", "avg_upload_latency",
-			"avg_download_jitter", "avg_upload_jitter",
-		}
-
-		for i := 1; i <= nTries; i++ {
-			titles = append(titles, fmt.Sprintf("ip_%d", i))
-		}
-
-		for i := 1; i <= nTries; i++ {
-			titles = append(titles, fmt.Sprintf("download_speed_%d", i))
-		}
-
-		for i := 1; i <= nTries; i++ {
-			titles = append(titles, fmt.Sprintf("upload_speed_%d", i))
-		}
-
-		for i := 1; i <= nTries; i++ {
-			titles = append(titles, fmt.Sprintf("download_latency_%d", i))
-		}
-
-		for i := 1; i <= nTries; i++ {
-			titles = append(titles, fmt.Sprintf("upload_latency_%d", i))
-		}
-
-		if _, err := fmt.Fprintln(emptyFile, strings.Join(titles, ",")); err != nil {
-			return fmt.Errorf("failed to write titles to interim results file: %w", err)
-		}
-
-	}
-	return nil
 }

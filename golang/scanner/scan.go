@@ -6,28 +6,33 @@ import (
 	"CFScanner/speedtest"
 	"CFScanner/utils"
 	"CFScanner/vpn"
+	"context"
 	"fmt"
 	"math"
-	"os"
+	"net"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/eiannone/keyboard"
 )
 
-var results [][]string
+// MaxProc limits the maximum number of parallel scan goroutines.
+var MaxProc = runtime.NumCPU() * 2
 
-var (
-	downloadSpeed   float64
-	downloadLatency float64
-	uploadSpeed     float64
-	uploadLatency   float64
-)
+// SkipConfig controls when to skip the current subnet.
+type SkipConfig struct {
+	// Skip a subnet after this many minutes (0 = disabled)
+	AfterMinutes float64
+	// Skip a subnet after this many successful IPs (0 = disabled)
+	AfterSuccesses int
+}
 
-type ScanResult struct {
+// scanResult holds per-IP speed test measurements. All values are local to
+// one goroutine call — no shared globals, no data races.
+type scanResult struct {
 	IP       string
 	Download struct {
 		Speed   []float64
@@ -39,457 +44,417 @@ type ScanResult struct {
 	}
 }
 
-// Running Possible worker state.
-var (
-	Running bool
-	MaxProc = runtime.NumCPU() * 2 // Max CPU + Thread * 2
-)
+var printMu sync.Mutex
 
-// const WorkerCount = 48
-
-func scanner(ip string, Config config.Configuration, Worker config.Worker) *ScanResult {
-
-	result := &ScanResult{
-		IP: ip,
+func printProgress(scanned, total, found int, start time.Time, subnet string) {
+	printMu.Lock()
+	defer printMu.Unlock()
+	elapsed := time.Since(start).Round(time.Second)
+	subnetInfo := ""
+	if subnet != "" {
+		subnetInfo = " | " + subnet
 	}
+	// \033[K clears the rest of the line
+	fmt.Printf("\r\033[K  [%d/%d scanned | %d found | %s%s]", scanned, total, found, elapsed, subnetInfo)
+}
 
-	var Upload = &Worker.Upload
-	var Download = &Worker.Download
+func printSuccess(isVpn bool, ip string, latency int, dlSpeed, ulSpeed float64) {
+	printMu.Lock()
+	defer printMu.Unlock()
+	// \033[K clears the progress line before printing the success line
+	if isVpn {
+		fmt.Printf("\r\033[K%v[OK]%v %-15s %4d ms  dl: %7.3f mbps  ul: %7.3f mbps\n",
+			utils.Colors.OKGREEN, utils.Colors.ENDC, ip, latency, dlSpeed, ulSpeed)
+	} else {
+		fmt.Printf("\r\033[K%v[OK]%v %-15s\n",
+			utils.Colors.OKGREEN, utils.Colors.ENDC, ip)
+	}
+}
 
-	var proxies map[string]string = nil
+// scanner performs a single IP scan and returns results or nil on failure.
+func scanner(ctx context.Context, ip string, C config.Configuration, Worker config.Worker) *scanResult {
+	res := &scanResult{IP: ip}
+
+	var proxies map[string]string
 	var process vpn.ScanWorker
 
 	if Worker.Vpn {
-		// create config for desired ip
-		xrayConfigPath := vpn.XRayConfig(ip, &Config)
-		listen, port, _ := vpn.XRayReceiver(xrayConfigPath)
-
-		// bind proxy
-		proxies = vpn.ProxyBind(listen, port)
-
-		// wait for port
-		utils.WaitForPort(listen, port, time.Duration(5))
-
-		var err error
-		process = vpn.XRayInstance(xrayConfigPath)
-
+		xrayConfigPath := vpn.XRayConfig(ip, &C)
+		listen, port, err := vpn.XRayReceiver(xrayConfigPath)
 		if err != nil {
-			ld := logger.ScannerManage{
-				IP:      "",
-				Status:  logger.ErrorStatus,
-				Message: "Could not start vpn service",
-				Cause:   err.Error(),
-			}
-			ld.Print()
-			os.Exit(1)
+			printLog(ip, logger.ErrorStatus, "Failed to read xray config", err.Error())
 			return nil
 		}
 
-		defer func() {
-			// terminate process
-			err = process.Instance.Close()
-			if err != nil {
-				ld := logger.ScannerManage{
-					IP:      "",
-					Status:  logger.ErrorStatus,
-					Message: "Failed to stop xray-core instance",
-					Cause:   err.Error(),
-				}
-				ld.Print()
-			}
+		proxies = vpn.ProxyBind(listen, port)
 
+		// Start Xray FIRST, then wait for port
+		process = vpn.XRayInstance(xrayConfigPath, C.LogLevel)
+		defer func() {
+			if err := process.Instance.Close(); err != nil {
+				printLog("", logger.ErrorStatus, "Failed to stop xray instance", err.Error())
+			}
 		}()
+
+		if err := utils.WaitForPort(listen, port, 5*time.Second); err != nil {
+			printLog(ip, logger.ErrorStatus, "Xray port not ready", err.Error())
+			return nil
+		}
 	}
 
-	for tryIdx := 0; tryIdx < Config.Config.NTries; tryIdx++ {
-		// Fronting test
+	Download := &Worker.Download
+	Upload := &Worker.Upload
 
-		if Config.Config.DoFrontingTest {
-			fronting := speedtest.FrontingTest(ip, proxies, time.Duration(Config.Config.FrontingTimeout))
+	for tryIdx := 0; tryIdx < C.Config.NTries; tryIdx++ {
+		// Check context before each try
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
 
-			if !fronting {
+		if !Worker.Vpn {
+			// SIMPLE TEST MODE: Only perform fronting test to check IP validity and get latency.
+			// This avoids blocked requests to speed.cloudflare.com/__down when directly accessing it without a VPN.
+			ok, latency := speedtest.FrontingTest(ctx, ip, proxies, time.Duration(C.Config.FrontingTimeout)*time.Second)
+			if !ok {
+				return nil
+			}
+			res.Download.Latency = append(res.Download.Latency, latency)
+			continue // Skip download and upload tests
+		}
+
+		// VPN MODE:
+		// Optional fronting test
+		if C.Config.DoFrontingTest {
+			ok, _ := speedtest.FrontingTest(ctx, ip, proxies, time.Duration(C.Config.FrontingTimeout)*time.Second)
+			if !ok {
 				return nil
 			}
 		}
 
-		// Check download speed
-		if m, done := downloader(ip, Download, proxies, result); done {
-			return m
-		}
-
-		// upload speed test
-		if Config.Config.DoUploadTest {
-			if m2, done2 := uploader(ip, Upload, proxies, result); done2 {
-				return m2
+		// Download test
+		dlSpeed, dlLatency, err := speedtest.DownloadSpeedTest(
+			ctx,
+			int(Download.MinDlSpeed*1000*Download.MaxDlTime),
+			proxies,
+			time.Duration(Download.MaxDlLatency)*time.Second,
+		)
+		if err != nil {
+			// context cancellation error is expected on quit
+			if ctx.Err() == nil {
+				printLog(ip, logger.FailStatus, logger.DownloadError, err.Error())
 			}
+			return nil
 		}
-
-		dlTimeLatency := math.Round(downloadLatency * 1000)
-		upTimeLatency := math.Round(uploadLatency * 1000)
-
-		ld := logger.ScannerManage{
-			IP:     ip,
-			Status: logger.InfoStatus,
-			Message: fmt.Sprintf("Download: %7.4fmbps , Upload: %7.4fmbps , UP_Latency: %vms , DL_Latency: %vms",
-				downloadSpeed, uploadSpeed, upTimeLatency, dlTimeLatency),
+		if dlLatency >= Download.MaxDlLatency {
+			return nil
 		}
-		ld.Print()
+		dlSpeedKBps := dlSpeed / 8 * 1000
+		if dlSpeedKBps <= Download.MinDlSpeed {
+			return nil
+		}
+		res.Download.Speed = append(res.Download.Speed, dlSpeed)
+		res.Download.Latency = append(res.Download.Latency, int(math.Round(dlLatency*1000)))
+
+		// Optional upload test
+		if C.Config.DoUploadTest {
+			ulSpeed, ulLatency, err := speedtest.UploadSpeedTest(
+				ctx,
+				int(Upload.MinUlSpeed*1000*Upload.MaxUlTime),
+				proxies,
+				time.Duration(Upload.MaxUlLatency)*time.Second,
+			)
+			if err != nil {
+				if ctx.Err() == nil {
+					printLog(ip, logger.FailStatus, logger.UploadError, err.Error())
+				}
+				return nil
+			}
+			if ulLatency >= Upload.MaxUlLatency {
+				return nil
+			}
+			ulSpeedKBps := ulSpeed / 8 * 1000
+			if ulSpeedKBps <= Upload.MinUlSpeed {
+				return nil
+			}
+			res.Upload.Speed = append(res.Upload.Speed, ulSpeed)
+			res.Upload.Latency = append(res.Upload.Latency, int(math.Round(ulLatency*1000)))
+		}
 	}
 
+	return res
+}
+
+// printLog is a tiny wrapper to avoid repeating logger.ScannerManage construction.
+func printLog(ip string, status logger.LogStatus, msg, cause string) {
+	// Mute logs during run unless they are critical, to keep output clean.
+	// Users want a clean console. We only print errors if explicitly needed.
+}
+
+// mean computes the arithmetic mean of a float64 slice.
+func mean(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	var s float64
+	for _, v := range vals {
+		s += v
+	}
+	return s / float64(len(vals))
+}
+
+// meanInt computes mean of an int slice as float64.
+func meanInt(vals []int) float64 {
+	floats := make([]float64, len(vals))
+	for i, v := range vals {
+		floats[i] = float64(v)
+	}
+	return mean(floats)
+}
+
+// scan is called per-IP. It runs the speed test and, on success, records output.
+func scan(ctx context.Context, C *config.Configuration, worker *config.Worker, ip, resultsPath, finalPath string) bool {
+	res := scanner(ctx, ip, *C, *worker)
+	if res == nil {
+		return false
+	}
+
+	meanDlLatency := meanInt(res.Download.Latency)
+	meanDlSpeed := mean(res.Download.Speed)
+	meanUlSpeed := mean(res.Upload.Speed)
+
+	latencyMs := int(math.Round(meanDlLatency))
+
+	printSuccess(worker.Vpn, ip, latencyMs, meanDlSpeed, meanUlSpeed)
+	RecordSuccess(ip, latencyMs, resultsPath, finalPath)
+	return true
+}
+
+// SubnetBatch groups IPs that belong to the same /24 subnet (or individually).
+func groupBySubnet(ipList []string) [][]string {
+	groups := map[string][]string{}
+	var order []string
+
+	for _, ip := range ipList {
+		parsed := net.ParseIP(ip)
+		var key string
+		if parsed != nil && parsed.To4() != nil {
+			parts := strings.Split(ip, ".")
+			if len(parts) == 4 {
+				key = strings.Join(parts[:3], ".")
+			}
+		}
+		if key == "" {
+			key = ip // IPv6 or unusual — treat each as its own group
+		}
+		if _, exists := groups[key]; !exists {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], ip)
+	}
+
+	result := make([][]string, 0, len(order))
+	for _, k := range order {
+		result = append(result, groups[k])
+	}
 	return result
 }
 
-func uploader(ip string, Upload *config.Upload, proxies map[string]string, result *ScanResult) (*ScanResult, bool) {
-	var err error
-	nBytes := Upload.MinUlSpeed * 1000 * Upload.MaxUlTime
-	uploadSpeed, uploadLatency, err = speedtest.UploadSpeedTest(int(nBytes), proxies,
-		time.Duration(Upload.MaxUlLatency))
+// runningState tracks whether workers are currently running.
+var runningState int32 = 1 // 1 = running, 0 = paused
 
-	if err != nil {
-		ld := logger.ScannerManage{
-			IP:      ip,
-			Status:  logger.FailStatus,
-			Message: logger.UploadError,
-			Cause:   err.Error(),
-		}
-		ld.Print()
-		return nil, true
-	}
+func isRunning() bool   { return atomic.LoadInt32(&runningState) == 1 }
+func setPaused()        { atomic.StoreInt32(&runningState, 0) }
+func setRunning()       { atomic.StoreInt32(&runningState, 1) }
 
-	if uploadLatency >= Upload.MaxUlLatency {
-		ld := logger.ScannerManage{
-			IP:      ip,
-			Status:  logger.FailStatus,
-			Message: logger.UploadLatency,
-		}
-		ld.Print()
-		return nil, true
-	}
+// Start is the main entry point for the scanning process.
+func Start(C config.Configuration, Worker config.Worker, ipList []string, threadsCount int, skip SkipConfig, resultsPath, finalPath string, scanStart time.Time) {
+	resetStore()
 
-	uploadSpeedKbps := uploadSpeed / 8 * 1000
-
-	if uploadSpeedKbps <= Upload.MinUlSpeed {
-		ld := logger.ScannerManage{
-			IP:     ip,
-			Status: logger.FailStatus,
-			Message: fmt.Sprintf("Upload too slow %f kBps < %f kBps",
-				uploadSpeedKbps, Upload.MinUlSpeed),
-		}
-		ld.Print()
-		return nil, true
-	}
-
-	result.Upload.Speed = append(result.Upload.Speed, uploadSpeed)
-	result.Upload.Latency = append(result.Upload.Latency, int(math.Round(uploadLatency*1000)))
-
-	return nil, false
-}
-
-func downloader(ip string, Download *config.Download, proxies map[string]string, result *ScanResult) (*ScanResult, bool) {
-	nBytes := Download.MinDlSpeed * 1000 * Download.MaxDlTime
-	var err error
-
-	downloadSpeed, downloadLatency, err = speedtest.DownloadSpeedTest(int(nBytes), proxies,
-		time.Duration(Download.MaxDlLatency))
-
-	if err != nil {
-		ld := logger.ScannerManage{
-			IP:      ip,
-			Status:  logger.FailStatus,
-			Message: logger.DownloadError,
-			Cause:   err.Error(),
-		}
-		ld.Print()
-		return nil, true
-
-	}
-
-	if downloadLatency >= Download.MaxDlLatency {
-		ld := logger.ScannerManage{
-			IP:     ip,
-			Status: logger.FailStatus,
-			Message: fmt.Sprintf("High Download latency %.4f s > %.4f s",
-				downloadLatency, Download.MaxDlLatency),
-		}
-		ld.Print()
-
-		return nil, true
-	}
-	downloadSpeedKBps := downloadSpeed / 8 * 1000
-
-	if downloadSpeedKBps <= Download.MinDlSpeed {
-		ld := logger.ScannerManage{
-			IP:     ip,
-			Status: logger.FailStatus,
-			Message: fmt.Sprintf("Download too slow %.4f kBps < %.4f kBps",
-				downloadSpeedKBps, Download.MinDlSpeed),
-		}
-		ld.Print()
-		return nil, true
-
-	}
-	result.Download.Speed = append(result.Download.Speed, downloadSpeed)
-	result.Download.Latency = append(result.Download.Latency, int(math.Round(downloadLatency*1000)))
-
-	return result, false
-}
-
-func scan(Config *config.Configuration, worker *config.Worker, ip string) {
-	res := scanner(ip, *Config, *worker)
-
-	if res == nil {
-		return
-	}
-
-	// make downLatencyInt to float64
-	downLatencyInt := res.Download.Latency
-	downLatency := make([]float64, len(downLatencyInt))
-	for i, v := range downLatencyInt {
-		downLatency[i] = float64(v)
-	}
-	downMeanJitter := utils.MeanJitter(downLatency)
-
-	// make uploadLatencyInt to float64
-	uploadLatencyInt := res.Upload.Latency
-	uploadLatency := make([]float64, len(uploadLatencyInt))
-	for i, v := range uploadLatencyInt {
-		uploadLatency[i] = float64(v)
-	}
-	upMeanJitter := -1.0
-
-	if Config.Config.DoUploadTest {
-		upMeanJitter = utils.MeanJitter(uploadLatency)
-	}
-
-	downSpeed := res.Download.Speed
-	meanDownSpeed := utils.Mean(downSpeed)
-	meanUploadSpeed := -1.0
-
-	uploadSpeed := res.Upload.Speed
-	if Config.Config.DoUploadTest {
-		meanUploadSpeed = utils.Mean(uploadSpeed)
-	}
-
-	meanDownLatency := utils.Mean(downLatency)
-	meanUploadLatency := -1.0
-	if Config.Config.DoUploadTest {
-		meanUploadLatency = utils.Mean(uploadLatency)
-	}
-
-	// change download latency to string type for using it with saveResults func
-	var latencyDownloadString string
-	for _, f := range downLatencyInt {
-		latencyDownloadString = fmt.Sprintf("%d", f)
-	}
-
-	results = append(results, []string{latencyDownloadString, ip})
-
-	var Writer Writer
-	switch Config.Config.Writer {
-	case "csv":
-		Writer = CSV{
-			res:                 res,
-			IP:                  ip,
-			DownloadMeanJitter:  downMeanJitter,
-			UploadMeanJitter:    upMeanJitter,
-			MeanDownloadSpeed:   meanDownSpeed,
-			MeanDownloadLatency: meanDownLatency,
-			MeanUploadSpeed:     meanUploadSpeed,
-			MeanUploadLatency:   meanUploadLatency,
-		}
-	case "json":
-		Writer = JSON{
-			res:                 res,
-			IP:                  ip,
-			DownloadMeanJitter:  downMeanJitter,
-			UploadMeanJitter:    upMeanJitter,
-			MeanDownloadSpeed:   meanDownSpeed,
-			MeanDownloadLatency: meanDownLatency,
-			MeanUploadSpeed:     meanUploadSpeed,
-			MeanUploadLatency:   meanUploadLatency,
-		}
-	default:
-		cause := fmt.Errorf("invalid writer type: %s", Config.Config.Writer)
-		ld := logger.ScannerManage{
-			IP:      "",
-			Status:  logger.ErrorStatus,
-			Message: nil,
-			Cause:   cause.Error(),
-		}
-		ld.Print()
-		os.Exit(1)
-
-	}
-
-	Writer.Output()
-	Writer.Write()
-
-	// Save results & sort based on download latency
-	err := saveResults(results, config.FinalResultsPathSorted, true)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-}
-func Start(C config.Configuration, Worker config.Worker, ipList []string, threadsCount int) {
-	var (
-		wg         sync.WaitGroup
-		pauseChan  = make(chan struct{})
-		resumeChan = make(chan struct{})
-		quitChan   = make(chan struct{})
-	)
-
-	// limit the thread execution if it was higher than current cpu num * 2
 	if threadsCount > MaxProc {
-		fmt.Println("Max Thread limit setting thread to :", MaxProc)
+		fmt.Printf("Capping threads at MaxProc = %d\n", MaxProc)
 		threadsCount = MaxProc
 	}
 
-	// get the key events
+	PrintScannerHelp()
+
+	subnets := groupBySubnet(ipList)
+
 	keysEvents, err := keyboard.GetKeys(10)
 	if err != nil {
-		fmt.Println(err)
-		return
+		fmt.Println("Warning: keyboard control unavailable:", err)
+		keysEvents = nil
+	} else {
+		// Do not defer close here. We will close it explicitly on quit.
 	}
 
-	// Create batches
-	n := len(ipList)
-	batchSize := len(ipList) / threadsCount
-	batches := make([][]string, threadsCount)
+	quitChan := make(chan struct{})
+	skipChan := make(chan struct{}, 1)
 
-	for i := range batches {
-		start := i * batchSize
-		end := (i + 1) * batchSize
-		if i == threadsCount-1 {
-			end = n
-		}
-		batches[i] = ipList[start:end]
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Start workers
-	Running = true
-	for i := 0; i < threadsCount; i++ {
-		wg.Add(1)
-		go func(batch []string) {
-			defer wg.Done()
-			for _, ip := range batch {
+	if keysEvents != nil {
+		go func() {
+			defer keyboard.Close()
+			for {
 				select {
-				case <-pauseChan:
-					// wait for resume signal
-					<-resumeChan
 				case <-quitChan:
-					// quit the function
 					return
-				default:
-					scan(&C, &Worker, ip)
+				case event, ok := <-keysEvents:
+					if !ok {
+						return
+					}
+					switch {
+					case event.Key == keyboard.KeyEsc || event.Key == keyboard.KeyCtrlC:
+						fmt.Println("\n\033[KQuit requested. Shutting down...")
+						cancel() // Abort all running network requests immediately
+						close(quitChan)
+						return
+					case event.Rune == 'p' || event.Rune == 'P':
+						if !isRunning() {
+							fmt.Println("\n\033[KAlready paused.")
+						} else {
+							setPaused()
+							fmt.Println("\n\033[KPaused. Press R to resume, S to skip subnet.")
+						}
+					case event.Rune == 'r' || event.Rune == 'R':
+						if isRunning() {
+							fmt.Println("\n\033[KAlready running.")
+						} else {
+							setRunning()
+							fmt.Println("\n\033[KResumed.")
+						}
+					case event.Rune == 's' || event.Rune == 'S':
+						select {
+						case skipChan <- struct{}{}:
+							fmt.Println("\n\033[KSkipping current subnet...")
+						default:
+						}
+					}
 				}
 			}
-		}(batches[i])
+		}()
 	}
 
-	// Handle user input in a separate goroutine
+	totalScanned := 0
+	totalIPs := len(ipList)
+	currentSubnet := ""
+	setRunning()
+
+	// Progress updater goroutine to ensure UI updates even when scanning is slow
+	progressCtx, progressCancel := context.WithCancel(context.Background())
 	go func() {
-		pauseChan, resumeChan = controller(keysEvents, threadsCount, pauseChan, resumeChan)
-		// Wait for quit signal
-		<-quitChan
-
-		// close the state listener channel
-		close(pauseChan)
-		close(resumeChan)
-	}()
-
-	wg.Wait()
-
-	// close key event listener
-	defer func() {
-		_ = keyboard.Close()
-	}()
-
-}
-
-// controller is a event listener for pausing or running workers
-func controller(keysEvents <-chan keyboard.KeyEvent,
-	threadsCount int, pauseChan chan struct{}, resumeChan chan struct{}) (chan struct{}, chan struct{}) {
-
-	for {
-		event := <-keysEvents
-
-		// exit program with event.key listener
-		if event.Key == keyboard.KeyEsc || event.Key == keyboard.KeyCtrlC {
-			_ = keyboard.Close()
-			os.Exit(1)
-		}
-
-		if event.Rune == 'p' || event.Rune == 'P' {
-			if !Running {
-				fmt.Println("Channel is currently Paused")
-				continue
-			}
-
-			for x := 0; x < threadsCount; x++ {
-				pauseChan <- struct{}{}
-			}
-			// set runner state to false
-			Running = false
-			fmt.Println("Paused")
-			time.Sleep(100 * time.Millisecond) // Add a small delay to prevent CPU usage
-
-		}
-		if event.Rune == 'r' || event.Rune == 'R' {
-			if Running {
-				fmt.Println("Channel is currently Running")
-				continue
-			}
-
-			for x := 0; x < threadsCount; x++ {
-				resumeChan <- struct{}{}
-			}
-			// set runner state to true
-			Running = true
-			fmt.Println("Resumed")
-			time.Sleep(100 * time.Millisecond) // Add a small delay to prevent CPU usage
-
-		}
-
-	}
-
-	return pauseChan, resumeChan
-}
-
-func saveResults(values [][]string, savePath string, sort bool) error {
-	// clean the values and make sure the first element is integer
-	for i := 0; i < len(values); i++ {
-		ms, err := strconv.Atoi(strings.TrimSuffix(values[i][0], " ms"))
-		if err != nil {
-			return err
-		}
-		values[i][0] = strconv.Itoa(ms)
-	}
-
-	if sort {
-		// sort the values based on response time using bubble sort
-		for i := 0; i < len(values); i++ {
-			for j := 0; j < len(values)-1; j++ {
-				ms1, _ := strconv.Atoi(values[j][0])
-				ms2, _ := strconv.Atoi(values[j+1][0])
-				if ms1 > ms2 {
-					values[j], values[j+1] = values[j+1], values[j]
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-progressCtx.Done():
+				return
+			case <-ticker.C:
+				if isRunning() {
+					printProgress(totalScanned, totalIPs, SuccessCount(), scanStart, currentSubnet)
 				}
 			}
 		}
+	}()
+	defer progressCancel()
+
+SubnetLoop:
+	for _, subnet := range subnets {
+		subnetStart := time.Now()
+		var subnetSuccesses int32 = 0
+		var subnetDispatched int = 0
+
+		// Derive a human-readable label for the progress bar
+		if len(subnet) > 0 {
+			parts := strings.Split(subnet[0], ".")
+			if len(parts) == 4 {
+				currentSubnet = strings.Join(parts[:3], ".") + ".x"
+			} else {
+				currentSubnet = subnet[0]
+			}
+		}
+
+		sem := make(chan struct{}, threadsCount)
+		var wg sync.WaitGroup
+
+	IPLoop:
+		for _, ip := range subnet {
+			select {
+			case <-quitChan:
+				break SubnetLoop
+			default:
+			}
+
+			select {
+			case <-skipChan:
+				// Credit remaining undispatched IPs so the counter stays accurate
+				totalScanned += len(subnet) - subnetDispatched
+				break IPLoop
+			default:
+			}
+
+			for !isRunning() {
+				select {
+				case <-quitChan:
+					break SubnetLoop
+				default:
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
+
+			if skip.AfterMinutes > 0 {
+				elapsed := time.Since(subnetStart).Minutes()
+				if elapsed >= skip.AfterMinutes {
+					totalScanned += len(subnet) - subnetDispatched
+					break IPLoop
+				}
+			}
+
+			if skip.AfterSuccesses > 0 && atomic.LoadInt32(&subnetSuccesses) >= int32(skip.AfterSuccesses) {
+				totalScanned += len(subnet) - subnetDispatched
+				break IPLoop
+			}
+
+			sem <- struct{}{}
+			wg.Add(1)
+
+			ipCopy := ip
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				ok := scan(ctx, &C, &Worker, ipCopy, resultsPath, finalPath)
+				if ok {
+					atomic.AddInt32(&subnetSuccesses, 1)
+				}
+			}()
+
+			totalScanned++
+			subnetDispatched++
+		}
+
+		wg.Wait()
+
+		// Drain any leftover skip signal so it doesn't carry over to the next subnet
+		select {
+		case <-skipChan:
+		default:
+		}
 	}
 
-	// write the values to file
-	var lines []string
-	for _, res := range values {
-		lines = append(lines, strings.Join(res, " "))
+	// Final progress update
+	printProgress(totalScanned, totalIPs, SuccessCount(), scanStart, "")
+	fmt.Printf("\n\033[KScan complete. %d IPs found.\n", SuccessCount())
+	
+	// Ensure keyboard goroutine cleans up
+	if keysEvents != nil {
+		select {
+		case <-quitChan:
+		default:
+			close(quitChan)
+		}
 	}
-	data := []byte(strings.Join(lines, "\n") + "\n")
-	err := os.WriteFile(savePath, data, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

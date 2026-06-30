@@ -1,6 +1,7 @@
 package speedtest
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,63 +11,50 @@ import (
 	"time"
 )
 
-// DownloadSpeedTest conducts a download speed test on ip and returns download speed and download latency
-func DownloadSpeedTest(nBytes int, proxies map[string]string, timeout time.Duration) (float64, float64, error) {
+// DownloadSpeedTest conducts a download speed test and returns (speed_mbps, latency_s, error).
+// It respects ctx cancellation so it aborts immediately on quit.
+func DownloadSpeedTest(ctx context.Context, nBytes int, proxies map[string]string, timeout time.Duration) (float64, float64, error) {
 	startTime := time.Now()
 
-	// Create byte slice of nBytes
 	data := make([]byte, nBytes)
 
-	// set proxy to request
 	var proxy *url.URL
-	// set proxies to req header
 	for _, v := range proxies {
 		proxy, _ = url.Parse(v)
 	}
 
-	// Create request
-	req, err := http.NewRequest("GET", "https://speed.cloudflare.com/__down", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://speed.cloudflare.com/__down", nil)
 	if err != nil {
 		return 0, 0, fmt.Errorf("error creating request: %v", err)
 	}
 
-	// Add bytes query parameter
 	q := req.URL.Query()
 	q.Add("bytes", strconv.Itoa(nBytes))
 	req.URL.RawQuery = q.Encode()
 
-	// Set up client
 	client := &http.Client{
-		Timeout:   timeout * time.Second,
+		Timeout:   timeout,
 		Transport: &http.Transport{Proxy: http.ProxyURL(proxy)},
 	}
 
-	// Send request and write response to data slice
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, 0, fmt.Errorf("error sending request: %v", err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			fmt.Errorf("error occured when closing response body: %v", err)
-		}
-	}(resp.Body)
+	defer resp.Body.Close()
 
 	_, err = io.ReadFull(resp.Body, data)
 	if err != nil {
 		return 0, 0, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	// Calculate download time and speed
 	totalTime := time.Since(startTime).Seconds()
 	cfTime := float64(0)
 	serverTiming := resp.Header.Get("Server-Timing")
 	if serverTiming != "" {
 		timings := strings.Split(serverTiming, "=")
 		if len(timings) > 1 {
-			cfTiming, err := strconv.ParseFloat(timings[1], 64)
-			if err == nil {
+			if cfTiming, err := strconv.ParseFloat(timings[1], 64); err == nil {
 				cfTime = cfTiming / 1000.0
 			}
 		}

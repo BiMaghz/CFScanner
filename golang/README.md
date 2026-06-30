@@ -1,175 +1,214 @@
-# CFScanner GoLang
+# CFScanner
 
 ![go]
 ![version]
+![license]
 
-CFScanner is a powerful tool written in Golang specifically designed to scan Cloudflare's edge IPs and identify viable options for use with V2Ray/Xray.
+**CFScanner** is a fast, standalone Cloudflare edge IP scanner written in Go. It identifies Cloudflare edge IPs that are accessible and performant for use with VLESS/Xray-based proxies.
 
-Its main objective is to locate edge IPs that are accessible and not blocked. With its built-in xray-core, CFScanner leverages xray+vmess+websocket+tls by default when the VPN flag is enabled.
-
-If you prefer to use it behind your Cloudflare proxy, you will need to set up a vmess account. However, if no specific configuration is provided, the program will automatically use the default settings.
-# Requirements
-
-- Golang v1.20
-
-# Installation
-
-### Getting the latest version from release page
-Latest release version of golang CFScanner are available in [releases](https://github.com/MortezaBashsiz/CFScanner/releases)
-section 
-
-
-### Build instructions
-
-If you prefer to build CFScanner from source, you can follow these instructions:
-
-Clone the repository by running the following command in your terminal:
-```bash
-git clone https://github.com/MortezaBashsiz/CFScanner.git
-```
-Navigate to the "golang" directory within the cloned repository:
-
-```bash
-cd CFScanner/golang
-```
-
-Build the binary using the "go build" command with additional flags for trimming the path and setting linker flags for smaller binary size:
-```bash
-go build -o CFScanner -trimpath -ldflags "-s -w -buildid=" .
-```
-
-## Get Configuration file
-
-```bash
-curl -s https://raw.githubusercontent.com/MortezaBashsiz/CFScanner/main/bash/ClientConfig.json -o config.real
-```
-
-in the config file the variables are :
-
-```json
-{
-  "id": "User's UUID",
-  "Host": "Host address which is behind Cloudflare",
-  "Port": "Port which you are using behind Cloudflare on your origin server",
-  "path": "Websocket endpoint like api20",
-  "serverName": "SNI"
-}
-```
-
-- NOTE: If you want to use your custom config DO NOT use it as config.real since script will update this file. Store your config in another file and pass it as an argument to script instead of config.real
-
-- The configuration file are similar to the bash version.
-
-# Usage
-
-To see CFScanner help , run the following command:
-
-```bash
-./CFScanner -h
-```
-
-CFScanner takes several arguments:
-
-| Arguments              | Short Descriptions                                                                               |
-|------------------------|--------------------------------------------------------------------------------------------------|
-| --threads -t           | Number of threads to use for parallel scanning. Default is 1.                                    |
-| --config -c            | The path to the config file. (Required)                                                          |
-| --vpn                  | If passed, test with creating xray-core connections.                                             |
-| --loglevel -l          | The log level for xray-core (default "none")                                                     |
-| --subnets -s           | The file or subnet. Each line should be in the form of ip.ip.ip.ip/subnet_mask or ip.ip.ip.ip.   |
-| --shuffle              | Shuffling given subnet file or input                                                             |
-| --upload               | If passed, upload test will be conducted.                                                        |
-| --fronting             | If passed, fronting request test will be conducted.                                              |
-| --tries -n             | Number of times to try each IP. An IP is marked as OK if all tries are successful. Default is 1. |
-| --download-speed       | Maximum download speed in kilobytes per second. Default is 50.                                   |
-| --upload-speed         | Maximum upload speed in kilobytes per second. Default is 50.                                     |
-| --download-time        | Maximum time to spend for each download. Default is 2.                                           |
-| --upload-time          | Maximum time to spend for each upload. Default is 2.                                             |
-| --fronting-timeout     | Maximum time to wait for fronting response. Default is 1.0.                                      |
-| --download-latency     | Maximum allowed latency for download. Default is 2.0.                                            |
-| --upload-latency       | Maximum allowed latency for upload. Default is 2.0.                                              |
-| --writer               | Custom output writer for writing interim results. available writers : `csv`/`json`               |
-
-# Features
-
-### KeyEvent Listeners
-CFScanner supports pause and resume progress 
-
-- For Pausing current progress press `p`
-  
-- For Resuming current progress press `r`
-
-### XRay Core
-This Program has built-in Xray-core for testing connection with vpn
-
-xray-core has 5 log levels
-
-**Available log levels**
-- debug
-- info
-- warning
-- error
-- none
-
-default loglevel is none.
+It ships with a built-in **xray-core** engine, so no external binaries are required. In simple mode it tests IPs with a lightweight TLS connection. In VPN mode it tunnels full download and upload speed tests through your VLESS proxy to accurately measure real-world performance.
 
 ---
 
-# Examples
+## Table of Contents
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Flags Reference](#flags-reference)
+- [Interactive Controls](#interactive-controls)
+- [Output](#output)
+- [License](#license)
 
+---
 
-### Load configuration file and load subnet file for scanning
+## Features
+- **Two scan modes**: fast simple test (TLS fronting check) and full VPN speed test (download + upload via Xray-core).
+- **Multiple transports**: `ws`, `httpupgrade`, `grpc`, `xhttp` — each with optional TLS.
+- **Built-in xray-core**: fully self-contained, no external `xray` binary needed.
+- **Real-time output**: clean, live progress bar with immediate `[OK]` results printed above it.
+- **Subnet grouping**: automatically groups IPs by `/24` and respects per-subnet skip rules.
+- **Interactive controls**: pause, resume, and skip subnets mid-scan without restarting.
+- **Fast shutdown**: pressing `Esc`/`Ctrl+C` cancels all in-flight network requests immediately.
+- **Sorted results**: final output file is sorted ascending by latency.
 
+---
+
+## Requirements
+- **Go 1.20+** — only required if building from source.
+- **Linux / macOS / Windows**.
+
+---
+
+## Installation
+
+### Option 1 — Pre-compiled Binary (Recommended)
+1. Go to the [Releases](https://github.com/MortezaBashsiz/CFScanner/releases) page and download the archive for your OS/architecture.
+2. Extract and place the `CFScanner` executable somewhere convenient.
+3. On Linux/macOS, make it executable:
+   ```bash
+   chmod +x CFScanner
+   ```
+
+### Option 2 — Build from Source
 ```bash
-./CFScanner --config config.real --subnets ips.txt
+git clone https://github.com/MortezaBashsiz/CFScanner.git
+cd CFScanner/golang
+go build -o CFScanner -trimpath -ldflags "-s -w -buildid=" .
 ```
 
-### Load configuration file and use input cidr and begin scanning ips with 4 threads
+---
 
+## Configuration
+
+CFScanner requires a JSON config file that describes your VLESS server.
+
+### Quick start
 ```bash
-./CFScanner --config config.real --subnets 172.20.0.0/24 --threads 4
+cp config.json.example config.json
+# Edit config.json with your own values
 ```
 
-### Load configurations file with subnet file and doing upload test
+### `config.json` format
 
-```bash
-./CFScanner --config config.real --subnets 172.20.0.0/24 --threads 4 --upload
+```json
+{
+  "id": "YOUR_UUID",
+  "host": "your-domain.com",
+  "port": "443",
+  "path": "/api",
+  "serverName": "your-domain.com",
+  "transport": "ws",
+  "tls": true,
+  "fingerprint": "chrome",
+  "subnetsList": "https://raw.githubusercontent.com/MortezaBashsiz/CFScanner/main/bash/cf.local.iplist"
+}
 ```
 
-### Load configurations file with subnet file and testing each ip 3 times
+| Field         | Description                                                                                  |
+|---------------|----------------------------------------------------------------------------------------------|
+| `id`          | Your VLESS UUID.                                                                             |
+| `host`        | The `Host` header / CDN domain.                                                              |
+| `port`        | Destination port (typically `443`).                                                          |
+| `path`        | WebSocket / xhttp endpoint path.                                                             |
+| `serverName`  | TLS SNI (Server Name Indication).                                                            |
+| `transport`   | Transport protocol: `ws`, `httpupgrade`, `grpc`, or `xhttp`.                                |
+| `tls`         | `true` to enable TLS, `false` for plain connections.                                         |
+| `fingerprint` | TLS client fingerprint: `chrome`, `firefox`, `safari`, `randomized`, etc.                   |
+| `subnetsList` | Default IP list — a URL or local file path. Overridden by `--subnets` on the command line.  |
+
+---
+
+## Usage
+
+### Simple Mode (fast, no VPN overhead)
+Tests IPs using a lightweight TLS fronting check directly against the Cloudflare edge — no download or upload tests, no heavy traffic. This is what you want for a first-pass scan to find live IPs quickly.
 
 ```bash
-./CFScanner --config config.real --subnets 172.20.0.0/24 --threads 4 --tries 3
+./CFScanner -c config.json
 ```
 
-### Load configurations file with subnet file and using vpn mode
+### VPN Mode (full speed test)
+Spins up an embedded Xray-core VLESS connection for each IP and measures real download (and optionally upload) speed through your proxy config.
 
 ```bash
-./CFScanner --config config.real --subnets 172.20.0.0/24 --vpn 
+./CFScanner -c config.json --vpn
+./CFScanner -c config.json --vpn --upload   # also test upload speed
 ```
+
+### Using the default `config.json`
+If `config.json` exists in the same directory as the binary, the `-c` flag can be omitted:
+```bash
+./CFScanner
+```
+
+---
+
+## Flags Reference
+
+| Flag                   | Short | Default  | Description                                                                     |
+|------------------------|-------|----------|---------------------------------------------------------------------------------|
+| `--config`             | `-c`  | —        | Path to config JSON. Falls back to `config.json` in the binary's directory.    |
+| `--vpn`                |       | `false`  | Enable VPN mode (VLESS + Xray-core connection test with speed measurement).     |
+| `--threads`            | `-t`  | `4`      | Number of parallel scan threads.                                                |
+| `--subnets`            | `-s`  | —        | Target: subnet file path, CIDR, single IP, or URL. Overrides `subnetsList`.    |
+| `--shuffle`            |       | `false`  | Randomise the IP order before scanning.                                         |
+| `--tries`              | `-n`  | `1`      | Times to test each IP. IP is marked OK only if **all** tries succeed.           |
+| `--upload`             |       | `false`  | (VPN mode only) Run upload speed test in addition to download.                  |
+| `--fronting`           |       | `false`  | (VPN mode only) Perform an extra domain-fronting check before the speed test.   |
+| `--skip-time`          |       | `0`      | Move to the next subnet after N minutes (0 = disabled).                         |
+| `--skip-count`         |       | `0`      | Move to the next subnet after finding N successful IPs (0 = disabled).          |
+| `--download-speed`     |       | `50`     | Minimum acceptable download speed (KB/s). VPN mode only.                        |
+| `--upload-speed`       |       | `50`     | Minimum acceptable upload speed (KB/s). VPN mode only.                          |
+| `--download-time`      |       | `2`      | Maximum duration for the download test (s). VPN mode only.                      |
+| `--upload-time`        |       | `2`      | Maximum duration for the upload test (s). VPN mode only.                        |
+| `--download-latency`   |       | `3.0`    | Maximum allowed download latency (s). VPN mode only.                            |
+| `--upload-latency`     |       | `3.0`    | Maximum allowed upload latency (s). VPN mode only.                              |
+| `--fronting-timeout`   |       | `1.0`    | Timeout for the fronting / simple test (s).                                     |
+| `--loglevel`           | `-l`  | `none`   | Xray-core internal log level: `debug`, `info`, `warning`, `error`, `none`.     |
+
+---
+
+## Interactive Controls
+
+While a scan is running you can control it with single key-presses (no Enter needed):
+
+| Key           | Action                                                              |
+|---------------|---------------------------------------------------------------------|
+| `P`           | Pause scanning.                                                     |
+| `R`           | Resume a paused scan.                                               |
+| `S`           | Skip the current subnet and immediately start the next one.         |
+| `Esc` / `Ctrl+C` | Cancel the entire scan and shut down cleanly.                   |
 
 ---
 
 ## Output
 
-Two files are stored for each (complete) run of the program
+All result files are created inside a `result/` directory automatically.
 
-#### Writer Results
-- Interim results file (e.g., `2023-03-10_20:49:30_result.csv` or `2023-03-10_20:49:30_result.json`)
-  - Includes the unsorted intermediate results in specified writer format. Useful in case the scanning process is not complete.
-#### Sorted Results
-- Final results file (e.g., `2023-03-10_20:49:30_final.txt`)
-  - Includes the final sorted results. The results are sorted ascending ly based on the download latency time.
+| File                             | Content                                                                 |
+|----------------------------------|-------------------------------------------------------------------------|
+| `YYYY-MM-DD_HH:MM:SS_result.txt` | Live interim file — appended as IPs are found during the scan.         |
+| `YYYY-MM-DD_HH:MM:SS_final.txt`  | Final file — same IPs sorted ascending by latency, written at the end. |
 
-all results are stored in `result` folder
+**Simple mode** output line:
+```
+[OK] 172.67.187.19
+```
 
-# License
+**VPN mode** output line:
+```
+[OK] 172.67.187.19     913 ms  dl:   0.351 mbps  ul:   0.000 mbps
+```
 
-CFScanner is released under the [GPL-3](../LICENSE) license.
+---
 
-# Contributing
+## Examples
 
-Contributions are welcome! Please read [CONTRIBUTING.md](../CONTRIBUTING.md) for more information.
+```bash
+# Fast simple scan using subnets embedded in config
+./CFScanner -c config.json
 
-[go]: https://img.shields.io/badge/Go-cyan?logo=go
-[version]: https://img.shields.io/badge/Version-1.6-blue
+# Simple scan with a specific CIDR, 8 threads, shuffled
+./CFScanner -c config.json -s 172.67.160.0/20 -t 8 --shuffle
+
+# VPN speed test, skip each subnet after finding 3 good IPs
+./CFScanner -c config.json --vpn --skip-count 3
+
+# VPN test with upload, try each IP 2 times
+./CFScanner -c config.json --vpn --upload -n 2
+
+# Test a single IP in VPN mode
+./CFScanner -c config.json --vpn -s 172.67.187.19
+```
+
+---
+
+## License
+
+Released under the [GPL-3.0](LICENSE) license.
+
+[go]: https://img.shields.io/badge/Go-1.20+-cyan?logo=go
+[version]: https://img.shields.io/badge/Version-2.0-blue
+[license]: https://img.shields.io/badge/License-GPL--3.0-green

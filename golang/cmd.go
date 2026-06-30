@@ -2,48 +2,58 @@ package main
 
 import "github.com/spf13/cobra"
 
-var threads int
-var nTries int
+var (
+	threads int
+	nTries  int
 
-var configPath string
-var subnets string
+	configPath string
+	subnets    string
 
-var Vpn bool
-var Loglevel string
-var doUploadTest bool
-var fronting bool
-var shuffle bool
+	Vpn      bool
+	Loglevel string
 
-var minDLSpeed float64
-var minULSpeed float64
-var maxDLTime float64
-var maxULTime float64
+	doUploadTest bool
+	fronting     bool
+	shuffle      bool
 
-var frontingTimeout float64
-var maxDLLatency float64
-var maxULLatency float64
+	minDLSpeed float64
+	minULSpeed float64
+	maxDLTime  float64
+	maxULTime  float64
 
-var bigIPList []string
+	frontingTimeout float64
+	maxDLLatency    float64
+	maxULLatency    float64
 
-var writerType string
+	// Skip configuration
+	skipAfterMinutes   float64
+	skipAfterSuccesses int
+
+	bigIPList []string
+)
 
 func RegisterCommands(rootCmd *cobra.Command) {
-	rootCmd.PersistentFlags().IntVarP(&threads, "threads", "t", 1, "Number of threads to use for parallel scanning")
-	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "The path to the config file")
-	rootCmd.PersistentFlags().BoolVar(&Vpn, "vpn", false, "If passed, test with creating xray-core connections")
-	rootCmd.PersistentFlags().StringVarP(&Loglevel, "loglevel", "l", "none", "The log level for xray-core")
-	rootCmd.PersistentFlags().StringVarP(&subnets, "subnets", "s", "", "The file or subnet. each line should be in the form of ip.ip.ip.ip/subnet_mask or ip.ip.ip.ip.")
-	rootCmd.PersistentFlags().BoolVar(&shuffle, "shuffle", false, "Shuffling given subnet file or input")
-	rootCmd.PersistentFlags().BoolVar(&doUploadTest, "upload", false, "If passed, upload test will be conducted")
-	rootCmd.PersistentFlags().BoolVar(&fronting, "fronting", false, "If passed, fronting request test will be conducted")
-	rootCmd.PersistentFlags().IntVarP(&nTries, "tries", "n", 1, "Number of times to try each IP. An IP is marked as OK if all tries are successful.")
-	rootCmd.PersistentFlags().Float64Var(&minDLSpeed, "download-speed", 50, "Maximum acceptable download speed in kilobytes per second")
-	rootCmd.PersistentFlags().Float64Var(&minULSpeed, "upload-speed", 50, "Maximum acceptable upload speed in kilobytes per second")
-	rootCmd.PersistentFlags().Float64Var(&maxDLTime, "download-time", 2, "Maximum (effective, excluding http time) time to spend for each download")
-	rootCmd.PersistentFlags().Float64Var(&maxULTime, "upload-time", 2, "Maximum (effective, excluding http time) time to spend for each upload")
-	rootCmd.PersistentFlags().Float64Var(&frontingTimeout, "fronting-timeout", 1.0, "Maximum time to wait for fronting response")
-	rootCmd.PersistentFlags().Float64Var(&maxDLLatency, "download-latency", 3.0, "Maximum allowed latency for download")
-	rootCmd.PersistentFlags().Float64Var(&maxULLatency, "upload-latency", 3.0, "Maximum allowed latency for upload")
-	rootCmd.PersistentFlags().StringVar(&writerType, "writer", "csv", "Custom output writer for writing interim results. [csv/json]")
+	f := rootCmd.PersistentFlags()
 
+	f.IntVarP(&threads, "threads", "t", 4, "Number of parallel scan threads")
+	f.StringVarP(&configPath, "config", "c", "", "Path to config.json file (required)")
+	f.BoolVar(&Vpn, "vpn", false, "Test via xray-core VLESS connections")
+	f.StringVarP(&Loglevel, "loglevel", "l", "none", "Xray-core log level: debug|info|warning|error|none")
+	f.StringVarP(&subnets, "subnets", "s", "", "Subnet file path, CIDR, or single IP")
+	f.BoolVar(&shuffle, "shuffle", false, "Shuffle IPs before scanning")
+	f.BoolVar(&doUploadTest, "upload", false, "Also run upload speed test")
+	f.BoolVar(&fronting, "fronting", false, "Run domain-fronting connectivity test")
+	f.IntVarP(&nTries, "tries", "n", 1, "Number of test attempts per IP (all must succeed)")
+
+	f.Float64Var(&minDLSpeed, "download-speed", 50, "Minimum acceptable download speed (KB/s)")
+	f.Float64Var(&minULSpeed, "upload-speed", 50, "Minimum acceptable upload speed (KB/s)")
+	f.Float64Var(&maxDLTime, "download-time", 2, "Maximum effective download time (s)")
+	f.Float64Var(&maxULTime, "upload-time", 2, "Maximum effective upload time (s)")
+	f.Float64Var(&frontingTimeout, "fronting-timeout", 1.0, "Fronting test timeout (s)")
+	f.Float64Var(&maxDLLatency, "download-latency", 3.0, "Maximum allowed download latency (s)")
+	f.Float64Var(&maxULLatency, "upload-latency", 3.0, "Maximum allowed upload latency (s)")
+
+	// Skip functionality
+	f.Float64Var(&skipAfterMinutes, "skip-time", 0, "Skip subnet after N minutes (0 = disabled)")
+	f.IntVar(&skipAfterSuccesses, "skip-count", 0, "Skip subnet after N successful IPs (0 = disabled)")
 }
